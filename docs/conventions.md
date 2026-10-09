@@ -55,6 +55,15 @@
 - `dev_uninject_plugin`：卸 entry + 清 registry + 删 junction + patch disabled 条目，卸载即净
 - 注入是运行时的：重启 web 后需重新注入；持久化用 `dev_install_package`（写 profile bundles）或正式安装（`dsh plugin add` + bundle patch）
 
+## link 安装的运行期依赖闭包
+
+- `dsh plugin add link:<目录>` 在 profile `node_modules` 里建的是 **junction**；Node 按 realpath 解析 → 插件及其**全部间接依赖都从插件项目自己的 node_modules 解析**，宿主导入的 dsh 副本帮不上忙（实测：报错栈落在 `<项目>\node_modules\@deepseek-ai\dsh-tools\lib\index.js`）
+- 所以 devDependencies 必须补全**运行期 import 闭包**：`legacy-peer-deps=true` 不装 peer，而 dsh-* 包的 peer 在运行时会被真实 import（如 `dsh-tools` import `@deepseek-ai/dsh-scope`；peer 链实测需补 `dsh-agent`/`dsh-session`/`dsh-session-projection`/`dsh-invariants`/`dsh-ptc-runtime`/`dsh-user-approval`/`dsh-scope`/`dsh-workspace`/`dsh-session-persistence`/`dsh-storage`/`dsh-storage-domain`/`cordis-plugin-include`/`node-addon-require-builtin`，全部钉 `0.2.0-rc.2`）
+- 闭包自查（read-only，compile-only）：从 4 个真实 import（`schemastery`、`dsh-tools`、`dsh-llm`、`dsh-sandbox`）BFS 遍历 dependencies+peerDependencies，报 `node_modules` 缺失项；补到 0 缺失
+- **排查 "failed to import" 的标准姿势**：boot audit 只在 `entry.fiber === undefined` 时报 "failed to import"（import 抛异常时 loader 只 `logger.error`，真实错误被吞）。在 profile 目录 `node --input-type=module -e "import('<包名>')..."` 直接复现真实错误（注意动态 import 的基准是**启动时**的 cwd，`process.chdir` 无效，要用 shell workdir）
+- **schemastery 必须用 fork**：普通 `schemastery@3.18.0` 没有 `Schema.prototype.volatile`（0.2.0 volatile 配置必需），报 `z.union(...).default(...).volatile is not a function`。用 npm alias：`"schemastery": "npm:@deepseek-ai/schemastery@3.18.4"`——import 写法 `import z from 'schemastery'` 和 peerDependencies 契约都不用动，且与宿主同实现
+- 包内容变更不过 HMR：改完 lib 要重启 `dsh web`（patch 文件才热重载）
+
 ## 发布
 
 - bundle patch 装配：包内 `cordis.patch.yml`（insert 插件行）+ package.json `dsh.bundle.patch` 声明，`dsh plugin add github:...` 一条命令正式安装
