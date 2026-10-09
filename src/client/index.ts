@@ -37,6 +37,10 @@ interface Status {
   preferred: 'auto' | 'bash' | 'pwsh'
   configuredBashPath: string
   registerError?: string
+  /** 组合默认沙箱模式（无 session 身份可拿，真实判定在 host 的 assemble/execute 里）。 */
+  sandboxModeDefault?: string
+  /** 默认模式下 MSYS bash 能否启动（confined 模式不能，见 host bashViableInMode）。 */
+  bashStartableInDefaultMode?: boolean
 }
 
 // ── 样式：与官方 PluginCard.module.css 同构（内联，CSS 变量一致）──────────
@@ -367,11 +371,24 @@ function ShellPolicyCard(props: { view?: 'summary' | 'page'; remote: ClientConte
     ? `bash 工具注册失败：${status.registerError}`
     : null
 
+  // 受限沙箱会话（只读 / 工作区写）里 MSYS git-bash 无法启动（命名信号管道被
+  // Windows ACL 沙箱拒绝），host 会让这些会话自动回落 pwsh；仅当组合默认模式
+  // 就跑不了 bash 时提示，避免与 full-access 用户无关的噪音。
+  const fallbackHintLine = status !== null
+    && status.supported
+    && status.effective === 'bash'
+    && status.bashStartableInDefaultMode === false
+    ? `当前组合默认沙箱模式为「${status.sandboxModeDefault ?? 'unknown'}」：MSYS git-bash 无法在受限模式下启动（信号管道被沙箱拒绝），受限会话将自动使用 pwsh；danger-full-access 会话 bash 全功能。`
+    : null
+
   // 配置面板内容（page 与折叠卡片的展开体共用）。
   const controls = [
     registerErrorLine !== null
       ? createElement('div', { key: 'status', style: errorStatusStyle }, registerErrorLine)
       : createElement('div', { key: 'status', style: statusStyle }, statusLine),
+    ...(fallbackHintLine !== null
+      ? [createElement('div', { key: 'fallback', style: fieldHintStyle }, fallbackHintLine)]
+      : []),
     ...options.map((opt) => createElement('label', { key: opt.value, style: optionStyle },
       createElement('input', {
         type: 'radio',

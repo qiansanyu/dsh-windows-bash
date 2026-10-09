@@ -27,6 +27,7 @@ import type { SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import type { ConfinedArgv, SandboxExecutionPolicy, SandboxMode } from '@deepseek-ai/dsh-sandbox'
 import { ESCALATION_TARGETS, approveEscalation, sandboxDenialMarker, validateEscalationArgs } from '@deepseek-ai/dsh-sandbox'
 import type { SandboxPolicyService } from '@deepseek-ai/dsh-sandbox-policy'
+import type { Session } from '@deepseek-ai/dsh-session'
 import type { JobOutcome } from '@deepseek-ai/dsh-jobs'
 import { existsSync } from 'node:fs'
 import { isAbsolute, join, resolve } from 'node:path'
@@ -185,6 +186,36 @@ function isLocalGuiRequest(req: { headers?: Record<string, unknown> }): boolean 
   } catch {
     return false
   }
+}
+
+/**
+ * 某沙箱模式下 MSYS git-bash 能否启动。
+ *
+ * confined 模式（read-only / workspace-write）下**不能**：MSYS 运行时启动时
+ * 必须创建命名管道（signal pipe）做信号处理，而 Windows ACL 沙箱的受限 token
+ * 让命名管道的创建访问检查必败（官方 README「Known boundaries」：命名管道走
+ * Win32 默认 SD 模板、不携带任何 restricting SID 授权；匿名管道能过只是
+ * PowerShell 管路的侥幸）——bash 直接 fatal error（Win32 error 5）。这是沙箱
+ * 的硬边界，不可也不应绕过（绕过等于脱离沙箱执行）。`undefined` mode 表示
+ * 无 sandboxPolicy 服务（无约束组合），按可用处理。
+ */
+function bashViableInMode(mode: SandboxMode | undefined): boolean {
+  return mode === undefined || mode === 'danger-full-access'
+}
+
+/**
+ * 从一次 prompt 组装的 scope key 解析该 agent 的 standing 沙箱模式。
+ *
+ * scope key 即 agent loop 对象本身（dsh-agent-loop `createScope(loopCtx, this)`，
+ * 构造器里 `this.session = session`），所以 `scope.session` 就是 Session；
+ * 拿不到 session 时退化为组合默认（`resolve({})`）。dsh-system-prompt 的
+ * AssembleContext 只带 scope/signal，session 只能经此路径获得。
+ */
+function sessionSandboxMode(ctx: AppContext, scope: unknown): SandboxMode | undefined {
+  const sandboxPolicy = ctx.get('sandboxPolicy') as SandboxPolicyService | undefined
+  if (sandboxPolicy === undefined) return undefined
+  const session = (scope as { session?: Session } | undefined | null)?.session
+  return sandboxPolicy.resolve(session === undefined ? {} : { session }).mode
 }
 
 /** bash 工具结果形状。 */
@@ -400,6 +431,18 @@ export function apply(ctx: AppContext, config: Config): void {
               policy = { ...(standingPolicy as SandboxExecutionPolicy), mode: approvedMode }
             }
 
+            // confined 模式兜底拦截：MSYS git-bash 在此模式下无法启动（其信号
+            // 管道是命名管道，创建被 Windows ACL 沙箱拒绝，见 bashViableInMode）。
+            // prompt 层已按 session 模式隐藏 bash（模型不该走到这里）；此处覆盖
+            // 旁路调用（hooks-claude-code 等），给出可读原因而不是 fatal error。
+            // 升级到 danger-full-access 且获批后 policy.mode 改变，自然放行。
+            if (policy !== undefined && !bashViableInMode(policy.mode)) {
+              throw new HarnessError(
+                `git-bash cannot start under the "${policy.mode}" sandbox mode: the MSYS runtime's named signal pipe is denied by the Windows ACL sandbox (documented boundary of read-only/workspace-write confinement). Use the pwsh tool instead, or retry with sandbox_permissions "danger-full-access" plus a justification.`,
+                'BASH_UNAVAILABLE',
+              )
+            }
+
             // argv 构造 + 沙箱 confine（DSH 0.2.0 起 confine 为异步）。
             let argv: string[] = [probe.path, '-c', args.command]
             let confined: ConfinedArgv | undefined
@@ -553,6 +596,10 @@ export function apply(ctx: AppContext, config: Config): void {
         return
       }
       if (url.endsWith('/status') && req.method === 'GET') {
+        // 本路由是裸 webServer 路由，请求不带 session 身份，拿不到当前 GUI 会话的
+        // 沙箱模式；报组合默认模式供卡片参考，真实判定发生在 assemble（per-session）
+        // 与 execute 两处。
+        const defaultMode = (ctx.get('sandboxPolicy') as SandboxPolicyService | undefined)?.resolve({}).mode
         send(200, {
           platform: process.platform,
           supported: isWindows,
@@ -562,6 +609,8 @@ export function apply(ctx: AppContext, config: Config): void {
           preferred: readConfig(source()).preferred,
           configuredBashPath: readConfig(source()).bashPath,
           registerError,
+          sandboxModeDefault: defaultMode,
+          bashStartableInDefaultMode: bashViableInMode(defaultMode),
         })
         return
       }
@@ -659,25 +708,32 @@ export function apply(ctx: AppContext, config: Config): void {
   // 探测与工具注册，否则卡片保存后 probe/effective 停留在 apply 时刻的旧值。
   ctx.on('loader/volatile-update', () => { applyPolicy() })
 
-  // 提示词工具面裁剪：effective=bash 时隐藏 pwsh，反之隐藏 bash。
-  ctx.on('system-prompt/assemble', async (_assembly, _context, next) => {
+  // 本 assemble 语境下 bash 是否真正可用：配置为 bash、且该 session 的
+  // standing 沙箱模式允许 MSYS 启动（confined 模式不可用，见 bashViableInMode）。
+  const bashUsableIn = (scope: unknown): boolean =>
+    effective === 'bash' && bashViableInMode(sessionSandboxMode(ctx, scope))
+
+  // 提示词工具面裁剪（per-session）：bash 可用时隐藏 pwsh，否则（配置 pwsh，
+  // 或 confined 会话自动回落）隐藏 bash——保证模型手里始终是能跑的那个 shell。
+  ctx.on('system-prompt/assemble', async (_assembly, context, next) => {
     const assembled = await next()
-    if (effective === 'bash') {
+    if (bashUsableIn(context.scope)) {
       return { ...assembled, tools: assembled.tools.filter((tool) => tool.name !== 'pwsh') }
     }
-    if (effective === 'pwsh') {
+    if (effective === 'pwsh' || !bashViableInMode(sessionSandboxMode(ctx, context.scope))) {
       return { ...assembled, tools: assembled.tools.filter((tool) => tool.name !== 'bash') }
     }
     return assembled
   })
 
   // 引导文本：text 用函数形式，每次 assemble 求值；框架会过滤空文本
-  // section，因此 effective=pwsh（含 bash 工具注册失败回落 pwsh）时不再
-  // 注入“bash 是默认 shell”，避免与模型实际看到的工具面自相矛盾。
+  // section，因此 effective=pwsh（含 bash 工具注册失败回落 pwsh）以及 confined
+  // 会话自动回落时，不再注入“bash 是默认 shell”，避免与模型实际看到的工具面
+  // 自相矛盾。
   ctx.systemPrompt.section({
     name: 'shell-policy',
     order: 104,
-    text: () => (effective === 'bash'
+    text: (context) => (bashUsableIn(context.scope)
       ? 'Windows shell policy: the `bash` tool (git-bash) is the default shell. '
         + 'Check the [exit code: N] marker on every bash result; investigate failures before moving on.'
       : ''),

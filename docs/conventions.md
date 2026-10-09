@@ -64,6 +64,14 @@
 - **schemastery 必须用 fork**：普通 `schemastery@3.18.0` 没有 `Schema.prototype.volatile`（0.2.0 volatile 配置必需），报 `z.union(...).default(...).volatile is not a function`。用 npm alias：`"schemastery": "npm:@deepseek-ai/schemastery@3.18.4"`——import 写法 `import z from 'schemastery'` 和 peerDependencies 契约都不用动，且与宿主同实现
 - 包内容变更不过 HMR：改完 lib 要重启 `dsh web`（patch 文件才热重载）
 
+## bash-on-Windows 与沙箱 confined 模式的硬冲突（2026-10 实测定位）
+
+- **MSYS git-bash 在 read-only / workspace-write 下必死**：启动即 `fatal error - couldn't create signal pipe, Win32 error 5`（ACCESS_DENIED）。MSYS 运行时启动时必须创建**命名管道**（signal pipe）做信号处理，Windows ACL 沙箱的受限 token 让命名管道创建访问检查必败。官方 README「Known boundaries」：命名管道走 Win32 默认 SD 模板、不携带任何 restricting SID 授权；匿名管道能过只因受限 token 默认 DACL 带了 full-access ACE，所以 PowerShell 管道不受影响。这是沙箱硬边界，不可也不应绕过（绕过 = 脱离沙箱执行）；官方 Windows confined 执行器本来就只有 pwsh（base patch 里 bash 系全 disabled）。danger-full-access 下 bash 全功能正常
+- 本插件处置（`auto` 的语义 = **可用性**而非存在性）：`bashViableInMode`——confined 模式判不可用；assemble 层 per-session 回落（confined 会话模型视野只给 `pwsh`）；execute 层拦缺（`BASH_UNAVAILABLE` 可读报错，覆盖 hooks 旁路）；status 报组合默认模式
+- **新会话默认 confined**：`dsh-sandbox-policy` 的 "File-sandbox mode a session starts from" 默认 `read-only`——新开 GUI 会话不切预设就是只读
+- **per-session 取数路径**：`AssembleContext` 只有 `scope`/`signal`，没有 session；scope key **就是 agent loop 对象本身**（dsh-agent-loop `createScope(loopCtx, this)`，构造器里 `this.session = session`），所以 `(scope).session` 即 `Session` → `sandboxPolicy.resolve({ session }).mode`
+- 排查姿势：confined 死 / unconfined 好的对照实验（同一条 bash 命令切模式跑两遍）比读码更快定位沙箱边界
+
 ## 发布
 
 - bundle patch 装配：包内 `cordis.patch.yml`（insert 插件行）+ package.json `dsh.bundle.patch` 声明，`dsh plugin add github:...` 一条命令正式安装
