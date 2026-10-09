@@ -19,6 +19,10 @@ import { defineTool, TOOL_ABORTED } from '@deepseek-ai/dsh-tools'
 import { HarnessError } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-settings'
 import type {} from '@deepseek-ai/dsh-system-prompt'
+// 引入 loader 的事件类型增强：'loader/volatile-update' 等事件声明在
+// cordis-plugin-loader 的 `declare module '@deepseek-ai/cordis'` 里，
+// 不引用其类型文件 ctx.on('loader/volatile-update') 会 TS2345。
+import type {} from '@deepseek-ai/cordis-plugin-loader'
 import type { SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import type { ConfinedArgv, SandboxExecutionPolicy, SandboxMode } from '@deepseek-ai/dsh-sandbox'
 import { ESCALATION_TARGETS, approveEscalation, sandboxDenialMarker, validateEscalationArgs } from '@deepseek-ai/dsh-sandbox'
@@ -648,6 +652,12 @@ export function apply(ctx: AppContext, config: Config): void {
 
   // 应用策略（bash 工具注册 / 注销）。
   applyPolicy()
+
+  // live 更新：volatile 字段（bashPath/preferred）变更时 Loader 只做引用就地
+  // 提交并发 loader/volatile-update 事件，不重建 entry、不重新 apply（见
+  // cordis-plugin-loader entry.ts _commitVolatile），因此必须在此监听并重算
+  // 探测与工具注册，否则卡片保存后 probe/effective 停留在 apply 时刻的旧值。
+  ctx.on('loader/volatile-update', () => { applyPolicy() })
 
   // 提示词工具面裁剪：effective=bash 时隐藏 pwsh，反之隐藏 bash。
   ctx.on('system-prompt/assemble', async (_assembly, _context, next) => {
