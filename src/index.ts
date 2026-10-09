@@ -18,6 +18,7 @@ import z from 'schemastery'
 import { defineTool, TOOL_ABORTED } from '@deepseek-ai/dsh-tools'
 import { HarnessError } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-settings'
+import type {} from '@deepseek-ai/dsh-system-prompt'
 import type { SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import type { ConfinedArgv, SandboxExecutionPolicy, SandboxMode } from '@deepseek-ai/dsh-sandbox'
 import { ESCALATION_TARGETS, approveEscalation, sandboxDenialMarker, validateEscalationArgs } from '@deepseek-ai/dsh-sandbox'
@@ -366,13 +367,12 @@ export function apply(ctx: AppContext, config: Config): void {
             validateEscalationArgs(args.sandbox_permissions, args.justification)
 
             // workdir：显式相对路径按 session cwd 解析；缺省用 session cwd。
+            // 收敛成 const：spawnSpec 是闭包，let 变量的外层窄化不会被保留。
             const headerCwd = exec.agent?.session.header.cwd
-            let workdir = args.workdir
-            if (workdir !== undefined && headerCwd !== undefined && !isAbsolute(workdir)) {
-              workdir = resolve(headerCwd, workdir)
-            } else if (workdir === undefined) {
-              workdir = headerCwd ?? process.cwd()
-            }
+            const rawWorkdir = args.workdir
+            const workdir: string = rawWorkdir === undefined
+              ? (headerCwd ?? process.cwd())
+              : (headerCwd !== undefined && !isAbsolute(rawWorkdir) ? resolve(headerCwd, rawWorkdir) : rawWorkdir)
 
             // 沙箱策略：standing policy + 升级请求。
             const sandbox = ctx.get('sandbox')
