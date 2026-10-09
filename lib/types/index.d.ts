@@ -10,11 +10,10 @@
  *    bash 工具并裁剪掉 `bash`（官方 tool-pwsh 继续工作）。
  * 4. bash 工具对齐官方 shell 工具：session cwd 解析、文件沙箱（confine +
  *    sandbox_permissions 升级）、run_in_background（jobs 通道）、终端卡片展示。
- * 5. 提供 /dsh-shell-policy/api 供 client 卡片读写状态与配置。
+ * 5. 提供 /dsh-shell-policy/api 供 client 卡片读写状态与配置（仅接受本机 GUI 来源请求）。
  * 6. 非 Windows 平台直接跳过（DSH 默认 bash 工具已可用），仅保留状态 API。
  */
 import type { Context, Volatile } from 'cordis';
-import z from 'schemastery';
 declare module '@deepseek-ai/dsh-jobs' {
     interface JobKindMap {
         bash: 'bash';
@@ -32,12 +31,12 @@ export interface Config {
     /** 显式 bash 可执行文件路径；留空则自动探测。 */
     bashPath: Volatile<string>;
 }
-export declare const Config: z<Schemastery.ObjectS<NoInfer<{
-    preferred: z<"bash" | "auto" | "pwsh", "bash" | "auto" | "pwsh", "volatile-defined">;
-    bashPath: z<string, string, "volatile-defined">;
+export declare const Config: import("@deepseek-ai/schemastery").default<Schemastery.ObjectS<NoInfer<{
+    preferred: import("@deepseek-ai/schemastery").default<"bash" | "auto" | "pwsh", "bash" | "auto" | "pwsh", (Mode extends "volatile" | "volatile-defined" ? "volatile-defined" : "defined") extends infer T ? T extends (Mode extends "volatile" | "volatile-defined" ? "volatile-defined" : "defined") ? T extends "defined" | "volatile-defined" ? "volatile-defined" : "volatile" : never : never>;
+    bashPath: import("@deepseek-ai/schemastery").default<string, string, (Mode extends "volatile" | "volatile-defined" ? "volatile-defined" : "defined") extends infer T_1 ? T_1 extends (Mode extends "volatile" | "volatile-defined" ? "volatile-defined" : "defined") ? T_1 extends "defined" | "volatile-defined" ? "volatile-defined" : "volatile" : never : never>;
 }>>, Schemastery.ObjectT<NoInfer<{
-    preferred: z<"bash" | "auto" | "pwsh", "bash" | "auto" | "pwsh", "volatile-defined">;
-    bashPath: z<string, string, "volatile-defined">;
+    preferred: import("@deepseek-ai/schemastery").default<"bash" | "auto" | "pwsh", "bash" | "auto" | "pwsh", (Mode extends "volatile" | "volatile-defined" ? "volatile-defined" : "defined") extends infer T_2 ? T_2 extends (Mode extends "volatile" | "volatile-defined" ? "volatile-defined" : "defined") ? T_2 extends "defined" | "volatile-defined" ? "volatile-defined" : "volatile" : never : never>;
+    bashPath: import("@deepseek-ai/schemastery").default<string, string, (Mode extends "volatile" | "volatile-defined" ? "volatile-defined" : "defined") extends infer T_3 ? T_3 extends (Mode extends "volatile" | "volatile-defined" ? "volatile-defined" : "defined") ? T_3 extends "defined" | "volatile-defined" ? "volatile-defined" : "volatile" : never : never>;
 }>>, "plain">;
 /** 本插件消费的 host 服务面（webServer 类型由本包声明）。 */
 type AppContext = Context & {
