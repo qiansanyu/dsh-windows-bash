@@ -136,6 +136,19 @@ function collectDshEnv(): Record<string, string> {
   return env
 }
 
+/**
+ * 面向模型的终端环境覆盖：关颜色、关分页器、关交互终端特性，防止
+ * pager 挂起命令或 ANSI 转义序列污染工具输出。与官方 dsh-bash-local 的
+ * ENV_OVERRIDES 对齐；subprocess 服务将调用方 env 合并在清除凭据后的
+ * 父环境之上，故在此声明即生效（DSH_* 无键冲突，声明顺序无关）。
+ */
+const MODEL_ENV_OVERRIDES: Record<string, string> = {
+  NO_COLOR: '1',
+  TERM: 'dumb',
+  PAGER: 'cat',
+  GIT_PAGER: 'cat',
+}
+
 /** bash 工具结果形状。 */
 interface BashResult {
   exitCode: number | null
@@ -365,7 +378,7 @@ export function apply(ctx: AppContext, config: Config): void {
               stdio: { stdin: 'ignore', stdout: collect, stderr: collect },
               graceMs: 3_000,
               signal,
-              env: collectDshEnv(),
+              env: { ...MODEL_ENV_OVERRIDES, ...collectDshEnv() },
             })
 
             // 后台：jobs 通道，cancel/readOutput 增量。
