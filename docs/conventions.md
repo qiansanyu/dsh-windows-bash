@@ -32,6 +32,7 @@
 - `ctx.webServer` 等 host 服务类型需自行声明（`AppContext` 交叉类型），未 import 对应包时 cordis Context 类型合并不生效
 - settings 注册（0.1.x 旧法，0.2.0 已移除）：`installSettingsSection(ctx, ns, schema, entry, hooks)`；0.2.0 见上文「DSH 0.2.0 架构变更」
 - settings 的 client 端 RPC 有 apiproxy allowlist（`WEB_SETTINGS_NAMESPACES`），插件自行注册的 namespace 不会被 serve 给浏览器——client 卡片读写需走插件自己的 host API，host 端仍经 settings 服务持久化
+- 插件自有 host API 必须自行做来源准入：裸 `webServer.register` 的前缀路由不在 `client-connection` 的 token/cookie 伞下（其准入只覆盖 connection 自己注册的路由），handler 入口要校验 `Origin`/`Host` 为回环（本插件 `isLocalGuiRequest`），否则跨站页面可经 simple request 静默改写配置
 - `system-prompt/assemble` 是 waterfall：必须 `await next()` 再裁剪；host 层无 scope tag 的 listener 全局接收所有 scope 的事件（`scopeTarget` 的 filter 对无 tag listener 放行）
 - 系统提示文本（sections）按会话快照注入，工具列表（tools）按请求刷新——引导文本新会话生效，工具面裁剪当前会话即生效
 
