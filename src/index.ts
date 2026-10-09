@@ -10,7 +10,7 @@
  *    bash 工具并裁剪掉 `bash`（官方 tool-pwsh 继续工作）。
  * 4. bash 工具对齐官方 shell 工具：session cwd 解析、文件沙箱（confine +
  *    sandbox_permissions 升级）、run_in_background（jobs 通道）、终端卡片展示。
- * 5. 提供 /dsh-shell-policy/api 供 client 卡片读写状态与配置。
+ * 5. 提供 /dsh-shell-policy/api 供 client 卡片读写状态与配置（仅接受本机 GUI 来源请求）。
  * 6. 非 Windows 平台直接跳过（DSH 默认 bash 工具已可用），仅保留状态 API。
  */
 import type { Context, Volatile } from 'cordis'
@@ -147,6 +147,39 @@ const MODEL_ENV_OVERRIDES: Record<string, string> = {
   TERM: 'dumb',
   PAGER: 'cat',
   GIT_PAGER: 'cat',
+}
+
+/** 回环主机名：localhost、::1、127.0.0.0/8。 */
+function isLoopbackHostname(hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, '')
+  return host === 'localhost' || host === '::1' || /^127(?:\.\d{1,3}){3}$/.test(host)
+}
+
+/**
+ * 状态/配置 API 的请求准入：只服务本机 GUI 自身来源的请求。
+ * - 带 `Origin` 头（浏览器跨站 fetch、表单 POST 均会带）：origin 主机必须是回环，
+ *   否则是跨站页面经 simple request（text/plain 表单 POST 无需预检）静默改写配置；
+ * - 不带 `Origin`（同源 GET、本地脚本）：`Host` 头必须是回环，
+ *   否则挡掉把 Host 指向外部域名的 DNS rebinding 类请求。
+ * 本路由是裸 webServer 前缀路由，不在 client-connection 的 token/cookie 伞下
+ * （Host API 的鉴权只覆盖 connection 自己注册的路由），故在此自行准入。
+ */
+function isLocalGuiRequest(req: { headers?: Record<string, unknown> }): boolean {
+  const origin = req.headers?.origin
+  if (typeof origin === 'string' && origin.length > 0) {
+    try {
+      return isLoopbackHostname(new URL(origin).hostname)
+    } catch {
+      return false
+    }
+  }
+  const host = req.headers?.host
+  if (typeof host !== 'string' || host.length === 0) return false
+  try {
+    return isLoopbackHostname(new URL(`http://${host}`).hostname)
+  } catch {
+    return false
+  }
 }
 
 /** bash 工具结果形状。 */
@@ -497,6 +530,9 @@ export function apply(ctx: AppContext, config: Config): void {
   // 状态与配置 API（所有平台注册；非 Windows 返回 supported: false）。
   // settings 的 client 端 RPC 有 allowlist 限制（apiproxy WEB_SETTINGS_NAMESPACES），
   // 本插件 namespace 不在其中，因此卡片读写都走本 API：host 端直接经 settings 服务持久化。
+  // 注意本路由是裸 webServer 前缀路由，不在 client-connection 的 token/cookie
+  // 鉴权伞下（其准入只覆盖 connection 自己注册的路由），故在 handler 入口自行做
+  // 回环来源准入（isLocalGuiRequest）。
   ctx.effect(() => ctx.webServer.register({
     kind: 'prefix',
     path: '/dsh-shell-policy/api',
@@ -505,6 +541,12 @@ export function apply(ctx: AppContext, config: Config): void {
       const send = (code: number, body: unknown): void => {
         res.writeHead(code, { 'content-type': 'application/json; charset=utf-8' })
         res.end(JSON.stringify(body))
+      }
+      // 准入：仅本机 GUI 自身来源（回环 Origin/Host）可读写，挡住跨站页面
+      // 与外部进程的未授权访问。
+      if (!isLocalGuiRequest(req)) {
+        send(403, { ok: false, error: 'forbidden: only the local GUI origin may call this API' })
+        return
       }
       if (url.endsWith('/status') && req.method === 'GET') {
         send(200, {
