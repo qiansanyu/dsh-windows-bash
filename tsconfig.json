@@ -13,7 +13,11 @@
     "skipLibCheck": true,
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
-    "sourceMap": true
+    "sourceMap": true,
+    "paths": {
+      "cordis": ["node_modules/@deepseek-ai/cordis/lib/types/index.d.ts"]
+    },
+    "baseUrl": "."
   },
   "include": ["src"],
   "exclude": ["src/client"]

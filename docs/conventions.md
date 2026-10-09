@@ -19,7 +19,9 @@
 
 ## 构建
 
-- `scripts/build.sh` 探测 `DSH_CHECKOUT`（env → 常见路径），junction link 编译依赖（cordis/schemastery/dsh-tools/dsh-subprocess/dsh-settings 等）后 tsc 编译 host
+- 构建依赖不再 junction 到 dsh 安装/checkout：junction 目标会随 dsh 升级静默变化；改为 `npm install` 真实下载，7 个 `@deepseek-ai/dsh-*` 在 devDependencies 钉到与运行时一致的精确版本（当前 `0.2.0-rc.2`，对齐 dsh 官方 package.json 的精确版本写法），`package-lock.json` 提交进库保证可复现；dsh 升级时显式改版本 → 重装 → 重编，漂移变成主动动作
+- **必须 `legacy-peer-deps`**（`.npmrc` 已固定）：peer 范围（`>=0.0.1-rc <2`）按 semver 规则无法被 `0.2.0-rc.2` 满足（node-semver 把 `-rc` 版本当 prerelease，且 registry 无稳定发布线），npm 7+ 自动装 peer 会另装旧稳定版或 EOVERRIDE 失败；`overrides` 方案同样会 EOVERRIDE（override 值与 peer 范围冲突）
+- `scripts/build.sh` 探测 `DSH_CHECKOUT`（env → 常见路径），junction link 编译依赖（cordis/schemastery/dsh-tools/dsh-subprocess/dsh-settings 等）后 tsc 编译 host；本仓库已改用 npm install，build.sh 仅作 checkout 开发环境的备选
 - client 用 tsdown 编译为 `lib/client.js`（`window.__ModuleLoader__.load` 注册）；tsdown 从 checkout 的 `node_modules/tsdown/dist/run.mjs` 直接跑（`.bin/tsdown` shell shim 在 git-bash 下有 MSYS 路径转换问题）
 - tsconfig 必须 `exclude: ["src/client"]`——host tsc 编译 client 会因 react 等浏览器依赖报 TS2307
 - **发布前手动构建 + `npm publish --ignore-scripts`**：`prepublishOnly` 里的 `bash scripts/build.sh` 在 cmd.exe 环境下因 bash 不在 PATH 而失败（已在 package.json 移除该钩子）
