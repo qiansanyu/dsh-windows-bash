@@ -606,12 +606,16 @@ export function apply(ctx: AppContext, config: Config): void {
     return assembled
   })
 
-  // 引导文本。
+  // 引导文本：text 用函数形式，每次 assemble 求值；框架会过滤空文本
+  // section，因此 effective=pwsh（含 bash 工具注册失败回落 pwsh）时不再
+  // 注入“bash 是默认 shell”，避免与模型实际看到的工具面自相矛盾。
   ctx.systemPrompt.section({
     name: 'shell-policy',
     order: 104,
-    text: 'Windows shell policy: the `bash` tool (git-bash) is the default shell. '
-      + 'Check the [exit code: N] marker on every bash result; investigate failures before moving on.',
+    text: () => (effective === 'bash'
+      ? 'Windows shell policy: the `bash` tool (git-bash) is the default shell. '
+        + 'Check the [exit code: N] marker on every bash result; investigate failures before moving on.'
+      : ''),
   })
 
   // 卸载清理：注销动态注册的 bash 工具。
