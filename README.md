@@ -4,18 +4,19 @@
 
 ![默认 Shell 配置卡片](docs/screenshots/shell-policy-card.png)
 
-[![npm version](https://img.shields.io/npm/v/dsh-windows-shell-policy)](https://www.npmjs.com/package/dsh-windows-shell-policy)
-[![npm downloads](https://img.shields.io/npm/dw/dsh-windows-shell-policy)](https://www.npmjs.com/package/dsh-windows-shell-policy)
-[![GitHub release](https://img.shields.io/github/v/release/LAN-TINA-WS/dsh-windows-shell-policy)](https://github.com/LAN-TINA-WS/dsh-windows-shell-policy/releases/latest)
-[![GitHub downloads](https://img.shields.io/github/downloads/LAN-TINA-WS/dsh-windows-shell-policy/total)](https://github.com/LAN-TINA-WS/dsh-windows-shell-policy/releases)
-[![GitHub stars](https://img.shields.io/github/stars/LAN-TINA-WS/dsh-windows-shell-policy)](https://github.com/LAN-TINA-WS/dsh-windows-shell-policy)
-[![license](https://img.shields.io/github/license/LAN-TINA-WS/dsh-windows-shell-policy)](LICENSE)
+[![dsh](https://img.shields.io/badge/dsh-0.2.2--rc.1%20--%200.2.x-informational)](https://github.com/qiansanyu/dsh-windows-shell-policy)
+[![GitHub release](https://img.shields.io/github/v/release/qiansanyu/dsh-windows-shell-policy)](https://github.com/qiansanyu/dsh-windows-shell-policy/releases/latest)
+[![GitHub downloads](https://img.shields.io/github/downloads/qiansanyu/dsh-windows-shell-policy/total)](https://github.com/qiansanyu/dsh-windows-shell-policy/releases)
+[![GitHub stars](https://img.shields.io/github/stars/qiansanyu/dsh-windows-shell-policy)](https://github.com/qiansanyu/dsh-windows-shell-policy)
+[![license](https://img.shields.io/github/license/qiansanyu/dsh-windows-shell-policy)](LICENSE)
 
 ## dsh-windows-shell-policy
 
-DeepSeek Harness 的 **Windows 默认 Shell 策略插件**：DSH 在 Windows 上默认启用 PowerShell（pwsh），而 LLM 训练语料中 bash 占比远高于 PowerShell，agent 执行 POSIX 命令时错误率显著升高。本插件探测 git-bash/MSYS2/Cygwin，在「设置 → 插件 → 插件配置」提供「默认 Shell」折叠卡片一键切换 bash/pwsh，动态注册 bash 工具并裁剪提示词工具面，让 agent 只面对一个 shell 工具。
+DeepSeek Harness 的 **Windows 默认 Shell 策略插件**：DSH 在 Windows 上默认启用 PowerShell（pwsh），而 LLM 训练语料中 bash 占比远高于 PowerShell，agent 执行 POSIX 命令时错误率显著升高。本插件探测 git-bash/MSYS2/Cygwin，在「设置 → 插件 → 插件配置」提供「默认 Shell」折叠卡片一键切换 bash/pwsh，动态注册 bash 工具，并按 agent 用 `tools.restrict` 收敛工具面，让 agent 只面对一个**真能跑的** shell。
 
-> [最新 Release](https://github.com/LAN-TINA-WS/dsh-windows-shell-policy/releases/latest) · [dsh-plugin 生态](https://github.com/topics/dsh-plugin) · [反馈](https://github.com/LAN-TINA-WS/dsh-windows-shell-policy/issues/1)
+> **来源**：本仓库是 [LAN-TINA-WS/dsh-windows-shell-policy](https://github.com/LAN-TINA-WS/dsh-windows-shell-policy) 的维护分支（原作者停止跟进后由 [qiansanyu](https://github.com/qiansanyu) 接手维护，0.1.0 起适配 dsh 0.2.2）。原项目 MIT，版权与出处见 [NOTICE](NOTICE)。
+>
+> [最新 Release](https://github.com/qiansanyu/dsh-windows-shell-policy/releases/latest) · [dsh-plugin 生态](https://github.com/topics/dsh-plugin) · [反馈](https://github.com/qiansanyu/dsh-windows-shell-policy/issues)
 
 ## 成品展示
 
@@ -27,7 +28,7 @@ DeepSeek Harness 的 **Windows 默认 Shell 策略插件**：DSH 在 Windows 上
 | 配置面板 | 「默认 Shell」折叠卡片（与官方「终端 / Agent 循环 / 网页搜索」卡片同构），显示探测状态与当前生效 shell，自动 / bash / pwsh 三选一（staged 编辑 + 保存/放弃，折叠时保留未保存标记） |
 | 策略生效 | `auto` 时探测到 bash 则用 bash 否则 pwsh；显式 `bash` / `pwsh` 强制对应 shell；切换下一次请求生效 |
 | bash 工具 | effective=bash 时动态注册（git-bash 执行，subprocess 通道，超时 / 输出截断 / exit code 标记），终端卡片展示（对话页可点击查看命令、cwd、输出与 exit 状态，与官方 shell 工具一致） |
-| 提示词裁剪 | `system-prompt/assemble` 中按策略隐藏 pwsh / bash，agent 工具面只保留一个 shell 工具 |
+| 工具面收敛 | per-agent `tools.restrict({deny})` 隐藏另一个 shell：**schema 与执行准入同时收窄**（模型硬调被隐藏的 shell 会被判 unknown），不再依赖 `system-prompt/assemble`；confined 会话自动回落 pwsh |
 | 持久化 | `preferred` 写入 settings 文档 `shell-policy` section，重启保留 |
 | 卸载即净 | `dsh plugin --profile web remove` 或 `dev_uninject_plugin` 一键还原（工具注销 + 提示词恢复 + junction 清理） |
 
@@ -36,19 +37,19 @@ DeepSeek Harness 的 **Windows 默认 Shell 策略插件**：DSH 在 Windows 上
 **GitHub 直装（推荐，国内网络最快，免等 npm）**：
 
 ```sh
-dsh plugin --profile web add github:LAN-TINA-WS/dsh-windows-shell-policy
+dsh plugin --profile web add github:qiansanyu/dsh-windows-shell-policy
 # 重启 dsh web，打开「设置 → 插件 → 插件配置」开始配置
 ```
 
-**npm 安装（一条命令）**：
+**npm 安装（仅上游 0.0.7，不含本分支的 0.2.2 修复）**：
 
 ```sh
-dsh plugin --profile web add dsh-windows-shell-policy
+npm i -g dsh-windows-shell-policy   # 上游包；0.1.0 及之后从本仓库 GitHub 安装
 ```
 
 **Release ZIP 安装**：
 
-1. 从 [Releases](https://github.com/LAN-TINA-WS/dsh-windows-shell-policy/releases/latest) 下载 `dsh-windows-shell-policy-v*.zip` 并解压
+1. 从 [Releases](https://github.com/qiansanyu/dsh-windows-shell-policy/releases/latest) 下载 `dsh-windows-shell-policy-v*.zip` 并解压
 2. `dsh plugin --profile web add link:<解压目录>`
 3. 重启 `dsh web`，打开「设置 → 插件 → 插件配置」开始配置
 
@@ -73,17 +74,18 @@ dev_inject_plugin <本目录>                      # host+UI 即时生效
 
 ## 反馈
 
-问题、需求、使用体验：提交到 [issue #1（欢迎反馈）](https://github.com/LAN-TINA-WS/dsh-windows-shell-policy/issues/1)。
+问题、需求、使用体验：提交到 [issue #1（欢迎反馈）](https://github.com/qiansanyu/dsh-windows-shell-policy/issues/1)。
 
 ## 贡献者
 
 | 贡献者 | 贡献 |
 | --- | --- |
-| [LAN-TINA-WS](https://github.com/LAN-TINA-WS) | 项目作者与维护者 |
+| [qiansanyu](https://github.com/qiansanyu) | 维护者（0.1.0 起的 dsh 0.2.2 适配与后续维护） |
+| [LAN-TINA-WS](https://github.com/LAN-TINA-WS) | 原作者（0.0.7 及之前全部设计与实现） |
 
 ## License
 
-本项目采用 [MIT License](LICENSE)。
+本项目采用 [MIT License](LICENSE)。原项目版权归 LAN-TINA-WS 所有，本分支在其之上修改，二者的版权声明都保留在 [LICENSE](LICENSE) 中，出处与改动范围见 [NOTICE](NOTICE)。
 
 ## 开发者文档
 

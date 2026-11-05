@@ -1,0 +1,24 @@
+# NOTICE
+
+本仓库是 **LAN-TINA-WS/dsh-windows-shell-policy** 的维护分支（fork），0.1.0 起由 qiansanyu 接手维护。
+原项目采用 MIT 许可，原始版权声明完整保留在 [LICENSE](LICENSE) 中（该文件同时含本分支的版权行）。
+
+## 出处
+
+| 项 | 值 |
+| --- | --- |
+| 上游仓库 | https://github.com/LAN-TINA-WS/dsh-windows-shell-policy |
+| 上游 npm 包 | `dsh-windows-shell-policy`（最后发布 0.0.7，不含本分支的修复） |
+| 原版权 | Copyright (c) 2026 LAN-TINA-WS |
+| 本分支基线 | 上游 0.0.7（本仓库首个提交 `3fa4e8d`，提交信息 "baseline: dsh-windows-shell-policy v0.0.7 as received (before hardening)"） |
+| 本分支维护 | qiansanyu（https://github.com/qiansanyu） |
+| 许可 | MIT |
+
+## 相对上游 0.0.7 的改动（0.1.0）
+
+1. **适配 dsh 0.2.2**：`system-prompt/assemble` 的载荷自 `0.2.2-alpha.2` 起不再包含 `tools`，旧实现在瀑布里 `assembled.tools.filter(...)` 会让每个 turn 的装配阶段抛 TypeError。改为 per-agent `tools.restrict({ deny })`，判定抽到 `src/policy.ts`。
+2. **打包口径**：4 个运行期依赖移入 `dependencies` 并改用版本区间（原先是 `devDependencies` 钉 `0.2.0-rc.2`，导致"类型按旧版编译、运行时在新版崩"）；`schemastery` alias 升到 `~3.19.0`；新增 `engines.dsh`。
+3. **工程**：纯函数单测（`npm test`）、不依赖 dsh 源码 checkout 的 `npm run build:tsc`。
+4. **文档**：README（中/英）与 `docs/` 同步新机制。
+
+除上述改动外，设计与实现来自上游；上游历史提交的作者信息保留在 git 历史中。

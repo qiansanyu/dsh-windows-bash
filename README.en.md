@@ -4,18 +4,19 @@
 
 ![Default Shell config card](docs/screenshots/shell-policy-card.png)
 
-[![npm version](https://img.shields.io/npm/v/dsh-windows-shell-policy)](https://www.npmjs.com/package/dsh-windows-shell-policy)
-[![npm downloads](https://img.shields.io/npm/dw/dsh-windows-shell-policy)](https://www.npmjs.com/package/dsh-windows-shell-policy)
-[![GitHub release](https://img.shields.io/github/v/release/LAN-TINA-WS/dsh-windows-shell-policy)](https://github.com/LAN-TINA-WS/dsh-windows-shell-policy/releases/latest)
-[![GitHub downloads](https://img.shields.io/github/downloads/LAN-TINA-WS/dsh-windows-shell-policy/total)](https://github.com/LAN-TINA-WS/dsh-windows-shell-policy/releases)
-[![GitHub stars](https://img.shields.io/github/stars/LAN-TINA-WS/dsh-windows-shell-policy)](https://github.com/LAN-TINA-WS/dsh-windows-shell-policy)
-[![license](https://img.shields.io/github/license/LAN-TINA-WS/dsh-windows-shell-policy)](LICENSE)
+[![dsh](https://img.shields.io/badge/dsh-0.2.2--rc.1%20--%200.2.x-informational)](https://github.com/qiansanyu/dsh-windows-shell-policy)
+[![GitHub release](https://img.shields.io/github/v/release/qiansanyu/dsh-windows-shell-policy)](https://github.com/qiansanyu/dsh-windows-shell-policy/releases/latest)
+[![GitHub downloads](https://img.shields.io/github/downloads/qiansanyu/dsh-windows-shell-policy/total)](https://github.com/qiansanyu/dsh-windows-shell-policy/releases)
+[![GitHub stars](https://img.shields.io/github/stars/qiansanyu/dsh-windows-shell-policy)](https://github.com/qiansanyu/dsh-windows-shell-policy)
+[![license](https://img.shields.io/github/license/qiansanyu/dsh-windows-shell-policy)](LICENSE)
 
 ## dsh-windows-shell-policy
 
-A **Windows default shell policy plugin** for DeepSeek Harness. DSH enables PowerShell (pwsh) by default on Windows, but bash dominates LLM training corpora, so agents make significantly more errors running POSIX commands through pwsh. This plugin probes for git-bash/MSYS2/Cygwin, adds a collapsible "Default Shell" card under Settings → Plugins → Plugin config to switch between bash and pwsh, dynamically registers the bash tool, and trims the prompt tool surface so the agent faces exactly one shell tool.
+A **Windows default shell policy plugin** for DeepSeek Harness. DSH enables PowerShell (pwsh) by default on Windows, but bash dominates LLM training corpora, so agents make significantly more errors running POSIX commands through pwsh. This plugin probes for git-bash/MSYS2/Cygwin, adds a collapsible "Default Shell" card under Settings → Plugins → Plugin config to switch between bash and pwsh, dynamically registers the bash tool, and narrows the tool surface per agent with `tools.restrict` so the agent faces exactly one shell tool — the one that actually runs.
 
-> [Latest Release](https://github.com/LAN-TINA-WS/dsh-windows-shell-policy/releases/latest) · [dsh-plugin ecosystem](https://github.com/topics/dsh-plugin) · [Feedback](https://github.com/LAN-TINA-WS/dsh-windows-shell-policy/issues/1)
+> **Provenance**: this repository is a maintenance fork of [LAN-TINA-WS/dsh-windows-shell-policy](https://github.com/LAN-TINA-WS/dsh-windows-shell-policy), taken over by [qiansanyu](https://github.com/qiansanyu) after upstream stopped following DSH; 0.1.0 adapts it to dsh 0.2.2. The original project is MIT; copyright and provenance live in [NOTICE](NOTICE).
+>
+> [Latest Release](https://github.com/qiansanyu/dsh-windows-shell-policy/releases/latest) · [dsh-plugin ecosystem](https://github.com/topics/dsh-plugin) · [Feedback](https://github.com/qiansanyu/dsh-windows-shell-policy/issues)
 
 ## Showcase
 
@@ -27,7 +28,7 @@ A **Windows default shell policy plugin** for DeepSeek Harness. DSH enables Powe
 | Config card | Collapsible "Default Shell" card (same chrome as the official Terminal / Agent loop / Web search cards) showing probe status and the effective shell; auto / bash / pwsh radio choice with staged edit + save/discard |
 | Policy | `auto` uses bash when found, else pwsh; explicit `bash` / `pwsh` forces that shell; takes effect on the next request |
 | bash tool | Dynamically registered when effective=bash (git-bash execution over the subprocess seam, timeout / output truncation / exit-code markers), rendered as a terminal card (click to inspect command, cwd, output and exit status — identical to the official shell tools) |
-| Prompt trimming | `system-prompt/assemble` hides pwsh or bash per policy, so the agent's tool surface keeps exactly one shell tool |
+| Tool surface | per-agent `tools.restrict({deny})` hides the other shell: **both the schema and the execution admission set narrow** (a model that hard-calls the hidden shell gets "unknown"), no longer relying on `system-prompt/assemble`; confined sessions fall back to pwsh |
 | Persistence | `preferred` is stored in the settings document `shell-policy` section and survives restarts |
 | Clean uninstall | `dsh plugin --profile web remove` or `dev_uninject_plugin` restores everything (tool unregistered, prompt restored, junction removed) |
 
@@ -36,19 +37,19 @@ A **Windows default shell policy plugin** for DeepSeek Harness. DSH enables Powe
 **GitHub direct install (recommended, fastest in CN, no npm wait)**:
 
 ```sh
-dsh plugin --profile web add github:LAN-TINA-WS/dsh-windows-shell-policy
+dsh plugin --profile web add github:qiansanyu/dsh-windows-shell-policy
 # restart dsh web, open Settings → Plugins → Plugin config
 ```
 
-**npm install (one command)**:
+**npm (upstream 0.0.7 only — it predates the 0.2.2 fix)**:
 
 ```sh
-dsh plugin --profile web add dsh-windows-shell-policy
+npm i -g dsh-windows-shell-policy   # upstream package; 0.1.0+ ships from this repo's GitHub
 ```
 
 **Release ZIP install**:
 
-1. Download `dsh-windows-shell-policy-v*.zip` from [Releases](https://github.com/LAN-TINA-WS/dsh-windows-shell-policy/releases/latest) and unzip
+1. Download `dsh-windows-shell-policy-v*.zip` from [Releases](https://github.com/qiansanyu/dsh-windows-shell-policy/releases/latest) and unzip
 2. `dsh plugin --profile web add link:<unzipped dir>`
 3. Restart `dsh web`, open Settings → Plugins → Plugin config
 
@@ -73,17 +74,18 @@ Changes take effect on the next request after saving; `preferred` persists in th
 
 ## Feedback
 
-Issues, feature requests, usage experience: file at [issue #1 (feedback welcome)](https://github.com/LAN-TINA-WS/dsh-windows-shell-policy/issues/1).
+Issues, feature requests, usage experience: file at [issue #1 (feedback welcome)](https://github.com/qiansanyu/dsh-windows-shell-policy/issues/1).
 
 ## Contributors
 
 | Contributor | Contribution |
 | --- | --- |
-| [LAN-TINA-WS](https://github.com/LAN-TINA-WS) | Author and maintainer |
+| [qiansanyu](https://github.com/qiansanyu) | Maintainer (dsh 0.2.2 adaptation and ongoing maintenance from 0.1.0) |
+| [LAN-TINA-WS](https://github.com/LAN-TINA-WS) | Original author (all design and implementation up to 0.0.7) |
 
 ## License
 
-This project is licensed under the [MIT License](LICENSE).
+This project is licensed under the [MIT License](LICENSE). The original work is copyright LAN-TINA-WS; this fork keeps both notices in [LICENSE](LICENSE), and records provenance and scope of changes in [NOTICE](NOTICE).
 
 ## Developer Docs
 

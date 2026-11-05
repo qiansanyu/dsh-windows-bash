@@ -16,7 +16,7 @@
 ## 设计决策
 
 1. **组合插件自带 bash 工具**（不依赖官方 tool-bash）：subprocess 通道执行 git-bash，动态注册/注销
-2. **提示词裁剪替代工具注销**：官方 pwsh 工具在 preset 层无法运行时注销，用 `system-prompt/assemble` 过滤隐藏
+2. **工具面收敛替代工具注销**：官方 pwsh 工具在 preset 层无法运行时注销。0.0.x 用 `system-prompt/assemble` 过滤隐藏（**dsh 0.2.2-alpha.2 起该载荷不再含 `tools`，此路已废**）；0.1.0 起改为 per-agent `tools.restrict({ deny })`——同时收窄下发的 schema 与执行准入集合，且必须在 agent 作用域调用
 3. **卡片读写走插件自己的 host API**：绕开 apiproxy settings allowlist，host 端仍经 settings 服务持久化
 4. **折叠卡片 + 终端卡片**：与官方 PluginCard / TerminalBlock 同构，体验一致
 

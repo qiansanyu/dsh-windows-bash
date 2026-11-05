@@ -35,8 +35,8 @@
 - settings 注册（0.1.x 旧法，0.2.0 已移除）：`installSettingsSection(ctx, ns, schema, entry, hooks)`；0.2.0 见上文「DSH 0.2.0 架构变更」
 - settings 的 client 端 RPC 有 apiproxy allowlist（`WEB_SETTINGS_NAMESPACES`），插件自行注册的 namespace 不会被 serve 给浏览器——client 卡片读写需走插件自己的 host API，host 端仍经 settings 服务持久化
 - 插件自有 host API 必须自行做来源准入：裸 `webServer.register` 的前缀路由不在 `client-connection` 的 token/cookie 伞下（其准入只覆盖 connection 自己注册的路由），handler 入口要校验 `Origin`/`Host` 为回环（本插件 `isLocalGuiRequest`），否则跨站页面可经 simple request 静默改写配置
-- `system-prompt/assemble` 是 waterfall：必须 `await next()` 再裁剪；host 层无 scope tag 的 listener 全局接收所有 scope 的事件（`scopeTarget` 的 filter 对无 tag listener 放行）
-- 系统提示文本（sections）按会话快照注入，工具列表（tools）按请求刷新——引导文本新会话生效，工具面裁剪当前会话即生效
+- `system-prompt/assemble` 是 waterfall：必须 `await next()` 再变换（0.2.1 及之前用来裁工具面——**0.2.2-alpha.2 起载荷不再含 `tools`**，这条路已关闭，改用 per-agent `tools.restrict`）；host 层无 scope tag 的 listener 全局接收所有 scope 的事件（`scopeTarget` 的 filter 对无 tag listener 放行）
+- 系统提示文本（sections）按会话快照注入，工具面（restriction / 注册）按请求刷新——引导文本新会话生效，工具面收敛当前会话即生效
 
 ## Client 侧
 
@@ -58,16 +58,17 @@
 ## link 安装的运行期依赖闭包
 
 - `dsh plugin add link:<目录>` 在 profile `node_modules` 里建的是 **junction**；Node 按 realpath 解析 → 插件及其**全部间接依赖都从插件项目自己的 node_modules 解析**，宿主导入的 dsh 副本帮不上忙（实测：报错栈落在 `<项目>\node_modules\@deepseek-ai\dsh-tools\lib\index.js`）
-- 所以 devDependencies 必须补全**运行期 import 闭包**：`legacy-peer-deps=true` 不装 peer，而 dsh-* 包的 peer 在运行时会被真实 import（如 `dsh-tools` import `@deepseek-ai/dsh-scope`；peer 链实测需补 `dsh-agent`/`dsh-session`/`dsh-session-projection`/`dsh-invariants`/`dsh-ptc-runtime`/`dsh-user-approval`/`dsh-scope`/`dsh-workspace`/`dsh-session-persistence`/`dsh-storage`/`dsh-storage-domain`/`cordis-plugin-include`/`node-addon-require-builtin`，全部钉 `0.2.0-rc.2`）
-- 闭包自查（read-only，compile-only）：从 4 个真实 import（`schemastery`、`dsh-tools`、`dsh-llm`、`dsh-sandbox`）BFS 遍历 dependencies+peerDependencies，报 `node_modules` 缺失项；补到 0 缺失
+- 0.1.0 起改了打包口径：4 个**运行期** import（`schemastery`、`dsh-tools`、`dsh-llm`、`dsh-sandbox`）放在 **dependencies**（range `>=0.2.2-rc.1 <0.3.0-0`），由选择它们的那份 lockfile 决定版本；只被类型引用的包装在 devDependencies。这样 `dsh plugin add github:…` 装进来时依赖会被真实安装，不会出现"插件自带一份 0.2.0-rc.2、运行时却按 0.2.2 崩"的错配（0.0.7 的崩溃根因之一）
+- 仍要留意的旧坑：`legacy-peer-deps=true` 不装 peer，而 dsh-* 包的 peer 在运行时会被真实 import（如 `dsh-tools` import `@deepseek-ai/dsh-scope`）——runtime deps 放 dependencies 后由 npm 自己展开闭包；只有**从 git 安装时**才需要确认这一点
+- 闭包自查（read-only）：从 4 个真实 import 出发 BFS 遍历 dependencies+peerDependencies，报 `node_modules` 缺失项；补到 0 缺失
 - **排查 "failed to import" 的标准姿势**：boot audit 只在 `entry.fiber === undefined` 时报 "failed to import"（import 抛异常时 loader 只 `logger.error`，真实错误被吞）。在 profile 目录 `node --input-type=module -e "import('<包名>')..."` 直接复现真实错误（注意动态 import 的基准是**启动时**的 cwd，`process.chdir` 无效，要用 shell workdir）
-- **schemastery 必须用 fork**：普通 `schemastery@3.18.0` 没有 `Schema.prototype.volatile`（0.2.0 volatile 配置必需），报 `z.union(...).default(...).volatile is not a function`。用 npm alias：`"schemastery": "npm:@deepseek-ai/schemastery@3.18.4"`——import 写法 `import z from 'schemastery'` 和 peerDependencies 契约都不用动，且与宿主同实现
+- **schemastery 必须用 fork，且版本要跟宿主那条线**：普通 `schemastery@3.18.x` 没有 `Schema.prototype.volatile`（volatile 配置必需），报 `z.union(...).default(...).volatile is not a function`。用 npm alias：`"schemastery": "npm:@deepseek-ai/schemastery@~3.19.0"`（dsh 0.2.2-rc.1 用的是 3.19.0；与 `dsh-tools` 的 `~3.19.0` 对齐才不会装出两份、也不会让 `tsc` 报 TS2742「inferred type cannot be named」）——import 写法 `import z from 'schemastery'` 不用动，与宿主同实现
 - 包内容变更不过 HMR：改完 lib 要重启 `dsh web`（patch 文件才热重载）
 
 ## bash-on-Windows 与沙箱 confined 模式的硬冲突（2026-10 实测定位）
 
 - **MSYS git-bash 在 read-only / workspace-write 下必死**：启动即 `fatal error - couldn't create signal pipe, Win32 error 5`（ACCESS_DENIED）。MSYS 运行时启动时必须创建**命名管道**（signal pipe）做信号处理，Windows ACL 沙箱的受限 token 让命名管道创建访问检查必败。官方 README「Known boundaries」：命名管道走 Win32 默认 SD 模板、不携带任何 restricting SID 授权；匿名管道能过只因受限 token 默认 DACL 带了 full-access ACE，所以 PowerShell 管道不受影响。这是沙箱硬边界，不可也不应绕过（绕过 = 脱离沙箱执行）；官方 Windows confined 执行器本来就只有 pwsh（base patch 里 bash 系全 disabled）。danger-full-access 下 bash 全功能正常
-- 本插件处置（`auto` 的语义 = **可用性**而非存在性）：`bashViableInMode`——confined 模式判不可用；assemble 层 per-session 回落（confined 会话模型视野只给 `pwsh`）；execute 层拦缺（`BASH_UNAVAILABLE` 可读报错，覆盖 hooks 旁路）；status 报组合默认模式
+- 本插件处置（`auto` 的语义 = **可用性**而非存在性）：`bashViableInMode`——confined 模式判不可用；per-agent `tools.restrict` 回落（confined 会话模型视野只给 `pwsh`；0.2.2 起不再用 assemble 层裁剪）；execute 层拦缺（`BASH_UNAVAILABLE` 可读报错，覆盖 hooks 旁路）；status 报组合默认模式
 - **新会话默认 confined**：`dsh-sandbox-policy` 的 "File-sandbox mode a session starts from" 默认 `read-only`——新开 GUI 会话不切预设就是只读
 - **per-session 取数路径**：`AssembleContext` 只有 `scope`/`signal`，没有 session；scope key **就是 agent loop 对象本身**（dsh-agent-loop `createScope(loopCtx, this)`，构造器里 `this.session = session`），所以 `(scope).session` 即 `Session` → `sandboxPolicy.resolve({ session }).mode`
 - 排查姿势：confined 死 / unconfined 好的对照实验（同一条 bash 命令切模式跑两遍）比读码更快定位沙箱边界
