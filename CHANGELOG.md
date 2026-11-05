@@ -2,6 +2,31 @@
 
 本项目的所有重要变更记录于此。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [0.1.0] - 2026-11-05
+
+本版是维护分支的首个版本（fork 自 [LAN-TINA-WS/dsh-windows-shell-policy](https://github.com/LAN-TINA-WS/dsh-windows-shell-policy) 0.0.7，原作者已停止跟进）。归属与改动范围见 [NOTICE](NOTICE)。
+
+### 修复（阻塞级）
+
+- **dsh 0.2.2 上每次发消息都崩**：`system-prompt/assemble` 的载荷自 `0.2.2-alpha.2` 起从 `PromptAssembly` 改为 `PromptPresentation`（去掉 `tools`，工具声明归 provider，瀑布之后才拼回）。旧实现在瀑布里 `assembled.tools.filter(...)` 恒为 `undefined.filter`，抛出的 TypeError 被 agent-loop 收敛成 `turn/end.reason.error{code:'UNKNOWN'}`，表现为"本轮运行失败 Cannot read properties of undefined (reading 'filter')"，且该 turn 不产生任何模型请求。**不是**加可选链能解决的：那会让模型同时拿到 `pwsh` + `bash`
+
+### 变更
+
+- **工具面收敛改为 per-agent `tools.restrict({ deny })`**（官方在 0.2.2 里隐藏另一个全局工具的唯一途径）：判定抽到 `src/policy.ts` 的纯函数 `desiredHide`；同步点在 `agent/created`（serial，首轮之前）、`agent/status→running`、`agent/inbox/inserted`（每次提交前，同轮生效）、`agent/disposed`（撤销）；`applyPolicy()` 末尾对活着的 agent 重扫一遍，避免"bash 注销了、pwsh 还被 deny"导致一个 shell 都不剩
+  - 行为比旧版更彻底：旧版只删请求里的 schema，执行准入集合里那个 shell 还在；`restrict` 两者同时收窄（模型硬调被隐藏的 shell 会被判 unknown）
+- **运行时依赖从 `devDependencies` 移到 `dependencies`**（`@deepseek-ai/dsh-llm` / `dsh-sandbox` / `dsh-tools` / `schemastery`），版本写成 `>=0.2.2-rc.1 <0.3.0-0`：0.0.7 把运行期 import 钉在 `devDependencies@0.2.0-rc.2`，`link:` 加载时 Node 从插件自己的 `node_modules` 解析 → **类型按 0.2.0 编译、运行时按 0.2.2 崩**，这是本次事故的第二个根因
+- `schemastery` fork alias 从 `3.18.4` 升到 `~3.19.0`（与 dsh 0.2.2-rc.1 及 `dsh-tools` 的依赖同一条线；跨版本会装出两份并触发 TS2742）
+- `package.json` 增加 `engines.dsh`（`>=0.2.2-rc.1 <0.3.0-0`）
+
+### 工程
+
+- 抽出 `src/policy.ts`（`bashViableInMode` / `desiredHide` 纯函数）+ `test/policy.test.mjs`（5 个用例，`npm test`）
+- 增加 `npm run build:tsc`：`tsc -p tsconfig.json` 直接出 `lib/`，不再依赖 `scripts/build.sh` 的 `DSH_CHECKOUT`（本机没有 dsh 源码 checkout 时也能构建）
+
+### 文档
+
+- README（中/英）、`docs/capabilities-host.md`、`docs/conventions.md`、`docs/roadmap-composition.md` 同步新机制与新的依赖口径；新增 [NOTICE](NOTICE) 记录 fork 出处与改动范围
+
 ## [Unreleased]
 
 ### 修复

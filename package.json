@@ -1,16 +1,28 @@
 {
   "name": "dsh-windows-shell-policy",
-  "version": "0.0.7",
-  "description": "DSH Windows default shell policy plugin: probe git-bash/MSYS2, switch bash/pwsh from the plugin config card, register the bash tool and trim the prompt tool surface. DSH Windows 默认 Shell 策略插件：探测 git-bash，配置面板切换 bash/pwsh，动态注册 bash 工具并裁剪提示词工具面",
+  "version": "0.1.0",
+  "description": "DSH Windows default shell policy plugin: probe git-bash/MSYS2, switch bash/pwsh from the plugin config card, register the bash tool, and hide the other shell per agent with tools.restrict. DSH Windows 默认 Shell 策略插件：探测 git-bash，配置面板切换 bash/pwsh，动态注册 bash 工具，并按 agent 用 tools.restrict 隐藏另一个 shell",
   "type": "module",
   "main": "./lib/index.js",
   "types": "./lib/types/index.d.ts",
   "files": [
     "lib",
     "cordis.patch.yml",
-    "LICENSE"
+    "LICENSE",
+    "NOTICE"
   ],
   "license": "MIT",
+  "author": {
+    "name": "qiansanyu",
+    "url": "https://github.com/qiansanyu"
+  },
+  "contributors": [
+    {
+      "name": "LAN-TINA-WS",
+      "url": "https://github.com/LAN-TINA-WS",
+      "comment": "原作者；本仓库是 https://github.com/LAN-TINA-WS/dsh-windows-shell-policy 的维护分支"
+    }
+  ],
   "keywords": [
     "dsh",
     "dsh-plugin",
@@ -23,56 +35,50 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/LAN-TINA-WS/dsh-windows-shell-policy.git"
+    "url": "git+https://github.com/qiansanyu/dsh-windows-shell-policy.git"
   },
-  "homepage": "https://github.com/LAN-TINA-WS/dsh-windows-shell-policy#readme",
+  "homepage": "https://github.com/qiansanyu/dsh-windows-shell-policy#readme",
   "bugs": {
-    "url": "https://github.com/LAN-TINA-WS/dsh-windows-shell-policy/issues"
+    "url": "https://github.com/qiansanyu/dsh-windows-shell-policy/issues"
+  },
+  "engines": {
+    "node": ">=22.12.0",
+    "dsh": ">=0.2.2-rc.1 <0.3.0-0"
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh-llm": ">=0.2.2-rc.1 <0.3.0-0",
+    "@deepseek-ai/dsh-sandbox": ">=0.2.2-rc.1 <0.3.0-0",
+    "@deepseek-ai/dsh-tools": ">=0.2.2-rc.1 <0.3.0-0",
+    "schemastery": "npm:@deepseek-ai/schemastery@~3.19.0"
   },
   "peerDependencies": {
     "@deepseek-ai/dsh-client-ui-slots": ">=0.0.1-rc <2",
     "@deepseek-ai/dsh-jobs": ">=0.0.1-rc <2",
-    "@deepseek-ai/dsh-llm": ">=0.0.1-rc <2",
-    "@deepseek-ai/dsh-sandbox": ">=0.0.1-rc <2",
     "@deepseek-ai/dsh-sandbox-policy": ">=0.0.1-rc <2",
     "@deepseek-ai/dsh-settings": ">=0.0.1-rc <2",
     "@deepseek-ai/dsh-subprocess": ">=0.0.1-rc <2",
-    "@deepseek-ai/dsh-tools": ">=0.0.1-rc <2",
-    "cordis": ">=4.0.0-rc <5",
-    "schemastery": "^3.18.0"
+    "cordis": ">=4.0.0-rc <5"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "4.0.4",
     "@deepseek-ai/cordis-plugin-include": "1.0.9",
-    "@deepseek-ai/dsh-agent": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-invariants": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-jobs": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-llm": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-ptc-runtime": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-sandbox": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-sandbox-policy": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-scope": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-session": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-session-persistence": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-session-projection": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-settings": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-storage": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-storage-domain": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-subprocess": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-system-prompt": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-tools": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-user-approval": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-workspace": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-agent": ">=0.2.2-rc.1 <0.3.0-0",
+    "@deepseek-ai/dsh-jobs": ">=0.2.2-rc.1 <0.3.0-0",
+    "@deepseek-ai/dsh-sandbox-policy": ">=0.2.2-rc.1 <0.3.0-0",
+    "@deepseek-ai/dsh-session": ">=0.2.2-rc.1 <0.3.0-0",
+    "@deepseek-ai/dsh-settings": ">=0.2.2-rc.1 <0.3.0-0",
+    "@deepseek-ai/dsh-subprocess": ">=0.2.2-rc.1 <0.3.0-0",
+    "@deepseek-ai/dsh-system-prompt": ">=0.2.2-rc.1 <0.3.0-0",
     "@types/node": "^24.13.3",
     "cordis": "4.0.0-rc.10",
-    "node-addon-require-builtin": "0.1.6",
-    "schemastery": "npm:@deepseek-ai/schemastery@3.18.4",
     "tsdown": "^0.22.14",
     "typescript": "^5.9.0"
   },
   "scripts": {
     "build": "bash scripts/build.sh",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "build:tsc": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --test"
   },
   "exports": {
     ".": {

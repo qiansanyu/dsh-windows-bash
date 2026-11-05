@@ -5,9 +5,9 @@
  * 1. 探测 git-bash / MSYS2 / Cygwin 可执行文件（显式 bashPath → 常见安装路径 → PATH）。
  * 2. 通过 settings namespace `shell-policy` 暴露 preferred（auto/bash/pwsh）与
  *    bashPath 配置，在「设置 - 插件 - 插件配置」面板由 client 卡片编辑。
- * 3. 策略生效：effective=bash 时动态注册 `bash` 工具（git-bash 执行），
- *    并在 system-prompt/assemble 中裁剪掉 `pwsh` 工具；effective=pwsh 时注销
- *    bash 工具并裁剪掉 `bash`（官方 tool-pwsh 继续工作）。
+ * 3. 策略生效：effective=bash 时动态注册 `bash` 工具（git-bash 执行），并用 per-agent
+ *    `tools.restrict({deny})` 隐藏 `pwsh`；effective=pwsh 时注销 bash 工具（官方
+ *    tool-pwsh 继续工作）。confined 会话自动回落 pwsh —— 判定见 policy.ts。
  * 4. bash 工具对齐官方 shell 工具：session cwd 解析、文件沙箱（confine +
  *    sandbox_permissions 升级）、run_in_background（jobs 通道）、终端卡片展示。
  * 5. 提供 /dsh-shell-policy/api 供 client 卡片读写状态与配置（仅接受本机 GUI 来源请求）。
@@ -33,10 +33,10 @@ export interface Config {
     bashPath: Volatile<string>;
 }
 export declare const Config: z<Schemastery.ObjectS<NoInfer<{
-    preferred: z<"bash" | "auto" | "pwsh", "bash" | "auto" | "pwsh", "volatile-defined">;
+    preferred: z<"pwsh" | "bash" | "auto", "pwsh" | "bash" | "auto", "volatile-defined">;
     bashPath: z<string, string, "volatile-defined">;
 }>>, Schemastery.ObjectT<NoInfer<{
-    preferred: z<"bash" | "auto" | "pwsh", "bash" | "auto" | "pwsh", "volatile-defined">;
+    preferred: z<"pwsh" | "bash" | "auto", "pwsh" | "bash" | "auto", "volatile-defined">;
     bashPath: z<string, string, "volatile-defined">;
 }>>, "plain">;
 /** 本插件消费的 host 服务面（webServer 类型由本包声明）。 */

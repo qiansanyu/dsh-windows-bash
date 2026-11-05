@@ -5,9 +5,9 @@
  * 1. 探测 git-bash / MSYS2 / Cygwin 可执行文件（显式 bashPath → 常见安装路径 → PATH）。
  * 2. 通过 settings namespace `shell-policy` 暴露 preferred（auto/bash/pwsh）与
  *    bashPath 配置，在「设置 - 插件 - 插件配置」面板由 client 卡片编辑。
- * 3. 策略生效：effective=bash 时动态注册 `bash` 工具（git-bash 执行），
- *    并在 system-prompt/assemble 中裁剪掉 `pwsh` 工具；effective=pwsh 时注销
- *    bash 工具并裁剪掉 `bash`（官方 tool-pwsh 继续工作）。
+ * 3. 策略生效：effective=bash 时动态注册 `bash` 工具（git-bash 执行），并用 per-agent
+ *    `tools.restrict({deny})` 隐藏 `pwsh`；effective=pwsh 时注销 bash 工具（官方
+ *    tool-pwsh 继续工作）。confined 会话自动回落 pwsh —— 判定见 policy.ts。
  * 4. bash 工具对齐官方 shell 工具：session cwd 解析、文件沙箱（confine +
  *    sandbox_permissions 升级）、run_in_background（jobs 通道）、终端卡片展示。
  * 5. 提供 /dsh-shell-policy/api 供 client 卡片读写状态与配置（仅接受本机 GUI 来源请求）。
@@ -29,6 +29,11 @@ import { ESCALATION_TARGETS, approveEscalation, sandboxDenialMarker, validateEsc
 import type { SandboxPolicyService } from '@deepseek-ai/dsh-sandbox-policy'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { JobOutcome } from '@deepseek-ai/dsh-jobs'
+// agent 事件（agent/created、agent/status、agent/inbox/inserted、agent/disposed）
+// 与 Agent.ctx 的声明都在这个包里；`bashViableInMode` / `desiredHide` 见 policy.ts。
+import type {} from '@deepseek-ai/dsh-agent'
+import type { Agent } from '@deepseek-ai/dsh-agent'
+import { bashViableInMode, desiredHide, type HideTarget } from './policy.js'
 import { existsSync } from 'node:fs'
 import { isAbsolute, join, resolve } from 'node:path'
 
@@ -188,28 +193,16 @@ function isLocalGuiRequest(req: { headers?: Record<string, unknown> }): boolean 
   }
 }
 
-/**
- * 某沙箱模式下 MSYS git-bash 能否启动。
- *
- * confined 模式（read-only / workspace-write）下**不能**：MSYS 运行时启动时
- * 必须创建命名管道（signal pipe）做信号处理，而 Windows ACL 沙箱的受限 token
- * 让命名管道的创建访问检查必败（官方 README「Known boundaries」：命名管道走
- * Win32 默认 SD 模板、不携带任何 restricting SID 授权；匿名管道能过只是
- * PowerShell 管路的侥幸）——bash 直接 fatal error（Win32 error 5）。这是沙箱
- * 的硬边界，不可也不应绕过（绕过等于脱离沙箱执行）。`undefined` mode 表示
- * 无 sandboxPolicy 服务（无约束组合），按可用处理。
- */
-function bashViableInMode(mode: SandboxMode | undefined): boolean {
-  return mode === undefined || mode === 'danger-full-access'
-}
 
 /**
- * 从一次 prompt 组装的 scope key 解析该 agent 的 standing 沙箱模式。
+ * 解析某个 scope key（或 Agent）的 standing 沙箱模式。
  *
  * scope key 即 agent loop 对象本身（dsh-agent-loop `createScope(loopCtx, this)`，
  * 构造器里 `this.session = session`），所以 `scope.session` 就是 Session；
  * 拿不到 session 时退化为组合默认（`resolve({})`）。dsh-system-prompt 的
  * AssembleContext 只带 scope/signal，session 只能经此路径获得。
+ * agent 生命周期钩子手里没有 assemble context，但它们拿到的 `Agent`
+ * 同样暴露 `session`，所以两条路径共用这个函数。
  */
 function sessionSandboxMode(ctx: AppContext, scope: unknown): SandboxMode | undefined {
   const sandboxPolicy = ctx.get('sandboxPolicy') as SandboxPolicyService | undefined
@@ -292,6 +285,45 @@ export function apply(ctx: AppContext, config: Config): void {
   let effective: 'bash' | 'pwsh' = 'pwsh'
   let bashDisposer: (() => void) | undefined
   let registerError: string | undefined
+
+  /**
+   * 每个 agent 当前挂着的工具面限制。
+   *
+   * `tools.restrict()` 只在**调用方作用域**生效（全局调用会抛 "requires a scoped
+   * context"），所以隐藏必须按 agent 逐个做：key 是 Agent 实例，value 记住隐藏目标是
+   * 谁、以及撤销用的 disposer。agent 释放后 WeakMap 自然回收，`agent/disposed`
+   * 里再显式撤销一次（那之后 agent 作用域不再接受注册）。
+   */
+  const hides = new WeakMap<Agent, { name: HideTarget; dispose: () => void }>()
+
+  /**
+   * 把一个 agent 的工具面同步到当前策略。幂等；策略或会话沙箱模式没变时直接返回。
+   *
+   * 为什么不再用 `system-prompt/assemble`：0.2.2-alpha.2 起该 waterfall 的载荷是
+   * `PromptPresentation`（sections / contexts / variables），**不含 `tools`**——工具
+   * 声明归 provider 所有，瀑布之后才由 systemPrompt 拼回 `PromptAssembly`。旧实现在
+   * 瀑布里 `assembled.tools.filter(...)`，在 0.2.2 上恒为 `undefined.filter`，
+   * 每个 turn 的装配阶段直接抛 TypeError。
+   *
+   * 0.2.2 里隐藏另一个全局工具的官方途径只有 per-agent `tools.restrict()`：它同时
+   * 收窄下发给模型的 schema 与**执行准入集合**（比旧版只删 schema 更彻底——模型硬调
+   * 被隐藏的 shell 会被判 unknown）。
+   */
+  const syncAgent = (agent: Agent): void => {
+    const want = desiredHide(effective, sessionSandboxMode(ctx, agent))
+    const cur = hides.get(agent)
+    if (cur?.name === want) return
+    cur?.dispose()
+    hides.delete(agent)
+    if (want === undefined) return
+    try {
+      hides.set(agent, { name: want, dispose: agent.ctx.tools.restrict({ deny: [want] }) })
+    } catch (error) {
+      // 组合里没有这个工具是正常情况：preset 关掉了 tool-pwsh、bash 尚未注册、
+      // 或该工具不是可限制的全局工具。旧版 filter 在这种情况下同样静默无效。
+      ctx.logger.debug('[shell-policy] 无法隐藏 %s，跳过: %s', want, String(error))
+    }
+  }
 
   /** 按当前配置重新应用策略：探测 bash、切换工具注册。幂等。 */
   const applyPolicy = (): void => {
@@ -572,6 +604,16 @@ export function apply(ctx: AppContext, config: Config): void {
       registerError = undefined
       ctx.logger.info('[shell-policy] 生效 shell: pwsh')
     }
+
+    // 注册/注销 bash 工具会改变"该隐藏谁"，活着的 agent 必须重算一次：否则会出现
+    // "bash 已注销、pwsh 还被 deny"——模型手里一个 shell 都不剩。上面提前 return
+    // 的分支说明 effective 没变，新 agent 由 agent/created 负责，因此不必重扫。
+    // 注意用 ctx.get('agents') 而不是 ctx.agents：本插件的 entry 没有声明 `inject`
+    // （agents 不是必需依赖），cordis 对未 inject 的服务属性访问会直接抛
+    // "cannot get property \"agents\" without inject"。ctx.get() 是允许的探测式读取，
+    // 服务不存在时返回 undefined（与上面的 sandbox / sandboxPolicy 同一写法）。
+    const agents = ctx.get('agents') as { list(): Agent[] } | undefined
+    for (const agent of agents?.list() ?? []) syncAgent(agent)
   }
 
   // 状态与配置 API（所有平台注册；非 Windows 返回 supported: false）。
@@ -597,8 +639,8 @@ export function apply(ctx: AppContext, config: Config): void {
       }
       if (url.endsWith('/status') && req.method === 'GET') {
         // 本路由是裸 webServer 路由，请求不带 session 身份，拿不到当前 GUI 会话的
-        // 沙箱模式；报组合默认模式供卡片参考，真实判定发生在 assemble（per-session）
-        // 与 execute 两处。
+        // 沙箱模式；报组合默认模式供卡片参考，真实判定发生在 per-agent 的
+        // tools.restrict（syncAgent）与 execute 两处。
         const defaultMode = (ctx.get('sandboxPolicy') as SandboxPolicyService | undefined)?.resolve({}).mode
         send(200, {
           platform: process.platform,
@@ -707,24 +749,31 @@ export function apply(ctx: AppContext, config: Config): void {
   // cordis-plugin-loader entry.ts _commitVolatile），因此必须在此监听并重算
   // 探测与工具注册，否则卡片保存后 probe/effective 停留在 apply 时刻的旧值。
   ctx.on('loader/volatile-update', () => { applyPolicy() })
+  ctx.on('loader/volatile-update', () => { applyPolicy() })
 
-  // 本 assemble 语境下 bash 是否真正可用：配置为 bash、且该 session 的
-  // standing 沙箱模式允许 MSYS 启动（confined 模式不可用，见 bashViableInMode）。
-  const bashUsableIn = (scope: unknown): boolean =>
-    effective === 'bash' && bashViableInMode(sessionSandboxMode(ctx, scope))
-
-  // 提示词工具面裁剪（per-session）：bash 可用时隐藏 pwsh，否则（配置 pwsh，
-  // 或 confined 会话自动回落）隐藏 bash——保证模型手里始终是能跑的那个 shell。
-  ctx.on('system-prompt/assemble', async (_assembly, context, next) => {
-    const assembled = await next()
-    if (bashUsableIn(context.scope)) {
-      return { ...assembled, tools: assembled.tools.filter((tool) => tool.name !== 'pwsh') }
+  // 工具面同步的触发点。restrict 只能在 agent 作用域调用，所以按 agent 逐个同步：
+  // - created：新建 / resume / clear / 压缩都会走，且是 serial 监听器——在该 agent
+  //   释放排队工作之前执行，首轮请求一定已经带上 restriction；
+  // - status→running：waking delivery 里同步进入 running，早于本 step 的 tools.resolve；
+  // - inbox/inserted：每次提交前重算，权限预设热切换后下一轮即生效（同轮实测正确）；
+  // - disposed：撤掉 restriction（agent 作用域随即 unwind）。
+  // created 是 serial 事件（listener 可返回 Promise<undefined>），这里同步完就返回。
+  ctx.on('agent/created', ({ agent }) => { syncAgent(agent); return undefined })
+  ctx.on('agent/status', ({ agent, status }) => { if (status === 'running') syncAgent(agent) })
+  ctx.on('agent/inbox/inserted', ({ agent }) => { syncAgent(agent) })
+  ctx.on('agent/disposed', ({ agent }) => {
+    const cur = hides.get(agent)
+    hides.delete(agent)
+    try {
+      cur?.dispose()
+    } catch {
+      // 作用域已 unwind 时 disposer 可能已失效；restriction 本身随 agent 一起回收。
     }
-    if (effective === 'pwsh' || !bashViableInMode(sessionSandboxMode(ctx, context.scope))) {
-      return { ...assembled, tools: assembled.tools.filter((tool) => tool.name !== 'bash') }
-    }
-    return assembled
   })
+
+  // 引导文本里"bash 是默认 shell"的判定，与 syncAgent 用的是同一个纯函数。
+  const bashUsableIn = (scope: unknown): boolean =>
+    desiredHide(effective, sessionSandboxMode(ctx, scope)) === 'pwsh'
 
   // 引导文本：text 用函数形式，每次 assemble 求值；框架会过滤空文本
   // section，因此 effective=pwsh（含 bash 工具注册失败回落 pwsh）以及 confined
