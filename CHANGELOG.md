@@ -31,6 +31,7 @@
 
 ### 修复
 
+- **后台作业输出恒为空（`job_output` 只回空、完成通知永远「No new output」）**：`jobs.start` 用的是旧版 `run().readOutput` 钩子，而当前 `@deepseek-ai/dsh-jobs` 只在 `spec.output` 非空时启动 pump，`readOutput` 已不被读取 ⇒ 后台进程的 stdout/stderr 从未进 ring。改为在 `spec` 里提供惰性绑定的 stdout/stderr `JobOutputSource`（spawn 发生在 `run()` 里，注册表首次 drain 早于它，源按 `running` 惰性取值）。顺带把非零退出的 `JobOutcome` 从 `failed` 改为 `completed` + `detail: exit code: N`：`failed` 在 jobs 契约里指作业基础设施失败，非零退出是命令的正常结果，与官方 `tool-bash` 同口径
 - **安全：状态/配置 API 增加请求准入**：`/dsh-shell-policy/api/*` 是裸 webServer 前缀路由，不在 `client-connection` 的 token/cookie 鉴权伞下；handler 入口新增 `isLocalGuiRequest`——带 `Origin` 头时（浏览器跨站 fetch 与表单 POST 均会带）要求回环主机，不带时（同源 GET/本地脚本）要求 `Host` 为回环。挡掉跨站页面经 simple request 静默改写 `preferred`/`bashPath`（`bashPath` 可被改写为任意可执行路径，是其中影响最大的一项）以及 Host 指向外部域名的 DNS rebinding 类请求
 - **提示词一致性**：`effective=pwsh`（含 bash 工具注册失败回落 pwsh）时不再注入"bash 是默认 shell"引导文本；section `text` 改为每次 assemble 求值的函数，由框架过滤空文本，与模型实际看到的工具面保持一致
 - **健壮性**：bash 子进程环境补充 `NO_COLOR=1` / `TERM=dumb` / `PAGER=cat` / `GIT_PAGER=cat`（对齐官方 `dsh-bash-local` 的 `ENV_OVERRIDES`），避免分页器把命令挂起到超时、以及 ANSI 转义序列污染工具输出

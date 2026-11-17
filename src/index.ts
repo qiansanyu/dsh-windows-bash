@@ -28,7 +28,7 @@ import type { ConfinedArgv, SandboxExecutionPolicy, SandboxMode } from '@deepsee
 import { ESCALATION_TARGETS, approveEscalation, sandboxDenialMarker, validateEscalationArgs } from '@deepseek-ai/dsh-sandbox'
 import type { SandboxPolicyService } from '@deepseek-ai/dsh-sandbox-policy'
 import type { Session } from '@deepseek-ai/dsh-session'
-import type { JobOutcome } from '@deepseek-ai/dsh-jobs'
+import type { JobOutcome, JobOutputSource } from '@deepseek-ai/dsh-jobs'
 // agent 事件（agent/created、agent/status、agent/inbox/inserted、agent/disposed）
 // 与 Agent.ctx 的声明都在这个包里；`bashViableInMode` / `desiredHide` 见 policy.ts。
 import type {} from '@deepseek-ai/dsh-agent'
@@ -493,7 +493,9 @@ export function apply(ctx: AppContext, config: Config): void {
               env: { ...MODEL_ENV_OVERRIDES, ...collectDshEnv() },
             })
 
-            // 后台：jobs 通道，cancel/readOutput 增量。
+            // 后台：jobs 通道。注册表只在 spec.output 非空时启动 pump；旧版
+            // run().readOutput 钩子已不被读取，缺 output 会让后台输出恒为空
+            //（完成通知只能说「没有新输出」）。读写共用同一份非消费的 collected 流。
             if (args.run_in_background === true) {
               const jobs = ctx.get('jobs')
               if (jobs === undefined) {
@@ -504,31 +506,31 @@ export function apply(ctx: AppContext, config: Config): void {
                 error.name = 'AbortError'
                 throw error
               }
+              // spawn 发生在 run() 里，而注册表的首次 drain 早于它 ⇒ 源必须惰性绑定。
+              let running: ReturnType<typeof ctx.subprocess.spawn> | undefined
+              const outputSource = (channel: 'stdout' | 'stderr'): JobOutputSource => ({
+                channel,
+                read: (fromByte) => {
+                  const reader = running?.collected[channel]
+                  return reader?.readFrom(fromByte) ?? { text: '', nextOffset: fromByte, lossy: false }
+                },
+              })
               const id = jobs.start({
                 kind: 'bash',
                 label: args.command,
                 // DSH 0.2.0 起 owner 为 SessionId（不再是 Agent 实例）。
                 ...exec.agent ? { owner: exec.agent.id } : {},
+                output: [outputSource('stdout'), outputSource('stderr')],
                 run: () => {
-                  const handle = ctx.subprocess.spawn(spawnSpec(undefined))
-                  let stdoutOffset = 0
-                  let stderrOffset = 0
+                  running = ctx.subprocess.spawn(spawnSpec(undefined))
+                  const handle = running
                   return {
                     cancel: () => handle.terminate(),
+                    // 非零退出是命令的结果，不是作业基础设施失败（与官方 tool-bash 同口径）。
                     done: handle.done.then((outcome): JobOutcome => ({
-                      status: outcome.exitCode === 0 ? 'completed' : 'failed',
+                      status: 'completed',
                       detail: `exit code: ${outcome.exitCode}`,
                     })),
-                    readOutput: () => {
-                      const out = handle.collected.stdout?.readFrom(stdoutOffset)
-                      const err = handle.collected.stderr?.readFrom(stderrOffset)
-                      stdoutOffset = out?.nextOffset ?? stdoutOffset
-                      stderrOffset = err?.nextOffset ?? stderrOffset
-                      const outText = out?.text ?? ''
-                      const errText = err?.text ?? ''
-                      const separator = outText.length > 0 && !outText.endsWith('\n') ? '\n' : ''
-                      return outText + (errText.length > 0 ? `${separator}[stderr]\n${errText}` : '')
-                    },
                   }
                 },
               })
