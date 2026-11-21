@@ -31,13 +31,21 @@ export interface Config {
     preferred: Volatile<'auto' | 'bash' | 'pwsh'>;
     /** 显式 bash 可执行文件路径；留空则自动探测。 */
     bashPath: Volatile<string>;
+    /** 单次调用超时默认值（ms）；官方对齐口径：默认 120000。 */
+    timeoutMs: Volatile<number>;
+    /** 超时上限（ms）；官方对齐口径：默认 600000，生效值 = min(请求值 ?? timeoutMs, 本值)。 */
+    maxTimeoutMs: Volatile<number>;
 }
 export declare const Config: z<Schemastery.ObjectS<NoInfer<{
     preferred: z<"pwsh" | "bash" | "auto", "pwsh" | "bash" | "auto", "volatile-defined">;
     bashPath: z<string, string, "volatile-defined">;
+    timeoutMs: z<number, number, "volatile-defined">;
+    maxTimeoutMs: z<number, number, "volatile-defined">;
 }>>, Schemastery.ObjectT<NoInfer<{
     preferred: z<"pwsh" | "bash" | "auto", "pwsh" | "bash" | "auto", "volatile-defined">;
     bashPath: z<string, string, "volatile-defined">;
+    timeoutMs: z<number, number, "volatile-defined">;
+    maxTimeoutMs: z<number, number, "volatile-defined">;
 }>>, "plain">;
 /** 本插件消费的 host 服务面（webServer 类型由本包声明）。 */
 type AppContext = Context & {
