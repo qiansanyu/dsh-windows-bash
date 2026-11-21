@@ -9,7 +9,8 @@
  *    `tools.restrict({deny})` 隐藏 `pwsh`；effective=pwsh 时注销 bash 工具（官方
  *    tool-pwsh 继续工作）。confined 会话自动回落 pwsh —— 判定见 policy.ts。
  * 4. bash 工具对齐官方 shell 工具：session cwd 解析、文件沙箱（confine +
- *    sandbox_permissions 升级）、run_in_background（jobs 通道）、终端卡片展示。
+ *    sandbox_permissions 升级）、run_in_background（jobs 通道）、前台超时晋升
+ *    后台（promote-on-timeout）、终端卡片展示。
  * 5. 提供 /dsh-shell-policy/api 供 client 卡片读写状态与配置（仅接受本机 GUI 来源请求）。
  * 6. 非 Windows 平台直接跳过（DSH 默认 bash 工具已可用），仅保留状态 API。
  */
@@ -35,17 +36,21 @@ export interface Config {
     timeoutMs: Volatile<number>;
     /** 超时上限（ms）；官方对齐口径：默认 600000，生效值 = min(请求值 ?? timeoutMs, 本值)。 */
     maxTimeoutMs: Volatile<number>;
+    /** 前台命令到超时点仍在跑时转为后台 job 继续跑（而非杀掉）；仅在 jobs 服务可用时生效。 */
+    promoteOnTimeout: Volatile<boolean>;
 }
 export declare const Config: z<Schemastery.ObjectS<NoInfer<{
     preferred: z<"pwsh" | "bash" | "auto", "pwsh" | "bash" | "auto", "volatile-defined">;
     bashPath: z<string, string, "volatile-defined">;
     timeoutMs: z<number, number, "volatile-defined">;
     maxTimeoutMs: z<number, number, "volatile-defined">;
+    promoteOnTimeout: z<boolean, boolean, "volatile-defined">;
 }>>, Schemastery.ObjectT<NoInfer<{
     preferred: z<"pwsh" | "bash" | "auto", "pwsh" | "bash" | "auto", "volatile-defined">;
     bashPath: z<string, string, "volatile-defined">;
     timeoutMs: z<number, number, "volatile-defined">;
     maxTimeoutMs: z<number, number, "volatile-defined">;
+    promoteOnTimeout: z<boolean, boolean, "volatile-defined">;
 }>>, "plain">;
 /** 本插件消费的 host 服务面（webServer 类型由本包声明）。 */
 type AppContext = Context & {

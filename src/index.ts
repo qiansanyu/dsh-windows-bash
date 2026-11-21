@@ -9,13 +9,14 @@
  *    `tools.restrict({deny})` 隐藏 `pwsh`；effective=pwsh 时注销 bash 工具（官方
  *    tool-pwsh 继续工作）。confined 会话自动回落 pwsh —— 判定见 policy.ts。
  * 4. bash 工具对齐官方 shell 工具：session cwd 解析、文件沙箱（confine +
- *    sandbox_permissions 升级）、run_in_background（jobs 通道）、终端卡片展示。
+ *    sandbox_permissions 升级）、run_in_background（jobs 通道）、前台超时晋升
+ *    后台（promote-on-timeout）、终端卡片展示。
  * 5. 提供 /dsh-shell-policy/api 供 client 卡片读写状态与配置（仅接受本机 GUI 来源请求）。
  * 6. 非 Windows 平台直接跳过（DSH 默认 bash 工具已可用），仅保留状态 API。
  */
 import type { Context, Volatile } from 'cordis'
 import z from 'schemastery'
-import { defineTool, TOOL_ABORTED } from '@deepseek-ai/dsh-tools'
+import { defineTool, TOOL_ABORTED, type ToolRunContext } from '@deepseek-ai/dsh-tools'
 import { HarnessError } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-settings'
 import type {} from '@deepseek-ai/dsh-system-prompt'
@@ -23,12 +24,12 @@ import type {} from '@deepseek-ai/dsh-system-prompt'
 // cordis-plugin-loader 的 `declare module '@deepseek-ai/cordis'` 里，
 // 不引用其类型文件 ctx.on('loader/volatile-update') 会 TS2345。
 import type {} from '@deepseek-ai/cordis-plugin-loader'
-import type { SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
+import type { SubprocessOutcome, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import type { ConfinedArgv, SandboxExecutionPolicy, SandboxMode } from '@deepseek-ai/dsh-sandbox'
 import { ESCALATION_TARGETS, approveEscalation, sandboxDenialMarker, validateEscalationArgs } from '@deepseek-ai/dsh-sandbox'
 import type { SandboxPolicyService } from '@deepseek-ai/dsh-sandbox-policy'
 import type { Session } from '@deepseek-ai/dsh-session'
-import type { JobOutcome, JobOutputSource } from '@deepseek-ai/dsh-jobs'
+import type { JobChunk, JobId, JobOutcome, JobOutputSource, JobRegistry, JobView } from '@deepseek-ai/dsh-jobs'
 // agent 事件（agent/created、agent/status、agent/inbox/inserted、agent/disposed）
 // 与 Agent.ctx 的声明都在这个包里；`bashViableInMode` / `desiredHide` 见 policy.ts。
 import type {} from '@deepseek-ai/dsh-agent'
@@ -81,6 +82,8 @@ export interface Config {
   timeoutMs: Volatile<number>
   /** 超时上限（ms）；官方对齐口径：默认 600000，生效值 = min(请求值 ?? timeoutMs, 本值)。 */
   maxTimeoutMs: Volatile<number>
+  /** 前台命令到超时点仍在跑时转为后台 job 继续跑（而非杀掉）；仅在 jobs 服务可用时生效。 */
+  promoteOnTimeout: Volatile<boolean>
 }
 
 export const Config = z.object({
@@ -88,10 +91,11 @@ export const Config = z.object({
   bashPath: z.string().default('').volatile(),
   timeoutMs: z.number().default(120_000).volatile(),
   maxTimeoutMs: z.number().default(600_000).volatile(),
+  promoteOnTimeout: z.boolean().default(true).volatile(),
 })
 
 /** 插件 apply 收到的原始 config（volatile 字段为引用对象）。 */
-type RawConfig = { preferred: unknown; bashPath: unknown; timeoutMs: unknown; maxTimeoutMs: unknown }
+type RawConfig = { preferred: unknown; bashPath: unknown; timeoutMs: unknown; maxTimeoutMs: unknown; promoteOnTimeout: unknown }
 
 /** 解包 volatile 引用（结构检测：带 get() 的引用对象；非引用值原样返回）。 */
 function unwrapVolatile<T>(value: unknown): T {
@@ -106,6 +110,7 @@ type ResolvedConfig = {
   bashPath: string
   timeoutMs: number
   maxTimeoutMs: number
+  promoteOnTimeout: boolean
 }
 
 /**
@@ -123,11 +128,14 @@ function readConfig(raw: RawConfig): ResolvedConfig {
   const bashPath = unwrapVolatile(raw.bashPath)
   const timeoutMs = unwrapVolatile(raw.timeoutMs)
   const maxTimeoutMs = unwrapVolatile(raw.maxTimeoutMs)
+  const promoteOnTimeout = unwrapVolatile(raw.promoteOnTimeout)
   return {
     preferred: preferred === 'bash' || preferred === 'pwsh' ? preferred : 'auto',
     bashPath: typeof bashPath === 'string' ? bashPath : '',
     timeoutMs: clampTimeoutMs(timeoutMs, 120_000),
     maxTimeoutMs: clampTimeoutMs(maxTimeoutMs, 600_000),
+    // 非 boolean 回落 true：与官方 promoteOnTimeout 默认开口径一致。
+    promoteOnTimeout: typeof promoteOnTimeout === 'boolean' ? promoteOnTimeout : true,
   }
 }
 
@@ -238,17 +246,40 @@ function sessionSandboxMode(ctx: AppContext, scope: unknown): SandboxMode | unde
 /** bash 工具结果形状。 */
 interface BashResult {
   exitCode: number | null
+  /** 进程被信号终止时的信号名（如 SIGKILL）；正常退出为 null（SubprocessOutcome.signal）。 */
+  signal: NodeJS.Signals | null
   timedOut: boolean
   aborted: boolean
+  /** 本次调用的生效超时（ms）；随 result 传给渲染层，输出 [timed out after Nms]。 */
+  timeoutMs: number
   stdout: { text: string; truncated: boolean; spillPath?: string }
   stderr: { text: string; truncated: boolean; spillPath?: string }
   sandbox?: { mode: string; denied: boolean }
+}
+
+/** 晋升结果：限时内没跑完的命令转为后台 job；output 为晋升点的一次性消费读文本。 */
+interface PromotedBashResult {
+  kind: 'promoted'
+  jobId: string
+  timeoutMs: number
+  output: string
 }
 
 /** 截断流的模型文本：溢出时在末尾追加整流 spill 文件路径（对齐官方 tool-bash streamText）。 */
 function streamText(output: { text: string; truncated: boolean; spillPath?: string }): string {
   if (!output.truncated) return output.text
   return `${output.text}\n[output truncated; full output: ${output.spillPath ?? '(unavailable)'}]`
+}
+
+/**
+ * 官方 ringDelta 的本地等价：把一次消费式读的 chunk 拼成「stdout 按序 + stderr
+ * 集中 [stderr] 段」的文本，让晋升结果的前半段与后续 job_output 读到的渲染完全同形。
+ */
+function ringDelta(chunks: readonly JobChunk[]): string {
+  const out = chunks.filter((chunk) => chunk.channel !== 'stderr').map((chunk) => chunk.text).join('')
+  const err = chunks.filter((chunk) => chunk.channel === 'stderr').map((chunk) => chunk.text).join('')
+  const separator = out.length > 0 && !out.endsWith('\n') ? '\n' : ''
+  return out + (err.length > 0 ? `${separator}[stderr]\n${err}` : '')
 }
 
 /** 渲染 bash 工具结果文本（对齐官方 shell 工具：exit 标记在末尾，exit 0 不报）。 */
@@ -265,12 +296,22 @@ function renderBashResult(value: BashResult, escalationModes: readonly SandboxMo
     markers.push(sandboxDenialMarker(value.sandbox.mode as SandboxMode))
     if (escalationModes.length > 0) markers.push('[sandbox: escalation available — retry this exact command once with sandbox_permissions (the narrowest wider mode that suffices) + justification; the approval prompt asks the user]')
   }
-  if (value.timedOut) markers.push('[timed out]')
-  if (value.aborted) markers.push('[aborted]')
+  if (value.timedOut) markers.push(`[timed out after ${value.timeoutMs}ms]`)
+  // signal 分支优先、exit code 分支在后（官方 renderResult 的互斥顺序）；不设 [aborted]
+  // 标记：aborted 调用一律 throw AbortError，不会产出 result（官方同口径）。
+  if (value.signal !== null) markers.push(`[killed by signal: ${value.signal}]`)
   else if (value.exitCode !== null && value.exitCode !== 0) markers.push(`[exit code: ${value.exitCode}]`)
   if (markers.length === 0) return body
   if (!body.endsWith('\n')) body += '\n'
   return body + markers.join('\n')
+}
+
+/** 晋升结果的模型文本：晋升点前的部分输出 + 「仍在跑、已转后台」标记（官方 renderPromoted 对齐）。 */
+function renderPromotedBash(promoted: PromotedBashResult): string {
+  const body = promoted.output.length > 0
+    ? (promoted.output.endsWith('\n') ? promoted.output : `${promoted.output}\n`)
+    : ''
+  return `${body}[still running after ${promoted.timeoutMs}ms; moved to background job ${promoted.jobId}]`
 }
 
 /**
@@ -316,6 +357,8 @@ export function apply(ctx: AppContext, config: Config): void {
   let effective: 'bash' | 'pwsh' = 'pwsh'
   let bashDisposer: (() => void) | undefined
   let registerError: string | undefined
+  /** 上次注册 bash 工具时的 promote 可用性；用于探测 volatile 热切换触发的重注册。 */
+  let registeredPromoteAvailable: boolean | undefined
 
   /**
    * 每个 agent 当前挂着的工具面限制。
@@ -362,12 +405,176 @@ export function apply(ctx: AppContext, config: Config): void {
     probe = probeBash(cfg.bashPath)
     const wanted = cfg.preferred === 'auto' ? (probe.found ? 'bash' : 'pwsh') : cfg.preferred
     const next = wanted === 'bash' && probe.found ? 'bash' : 'pwsh'
-    if (next === effective && (next !== 'bash' || bashDisposer !== undefined)) return
+    // 工具面能力在注册期算一次（组合期事实），不做每调用重算；但 promoteOnTimeout
+    // 是 volatile 热配置，翻转会改变双态 timeoutMs 文案 ⇒ effective 不变也要重注册，
+    // 否则模型看到的参数描述停留在旧状态（行为本身是热的，execute 每次实读配置）。
+    const jobsAvailable = ctx.get('jobs') !== undefined
+    const promoteAvailable = jobsAvailable && cfg.promoteOnTimeout
+    if (next === effective
+      && (next !== 'bash' || (bashDisposer !== undefined && registeredPromoteAvailable === promoteAvailable))) return
     effective = next
     if (effective === 'bash') {
       // 沙箱升级面是 composition 级事实（sandbox + sandboxPolicy 服务存在与否）。
       const escalationModes: readonly SandboxMode[] =
         ctx.get('sandbox') !== undefined && ctx.get('sandboxPolicy') !== undefined ? ESCALATION_TARGETS : []
+
+      type BashProcess = ReturnType<typeof ctx.subprocess.spawn>
+
+      /**
+       * 前台结果构造：普通前台路径与 promote 定时落定路径共用同一份
+       * stdout/stderr/sandbox-deny/signal 逻辑，避免两份实现漂移。
+       */
+      const collectForegroundResult = (
+        handle: BashProcess,
+        outcome: SubprocessOutcome,
+        classification: { timedOut: boolean; aborted: boolean; timeoutMs: number },
+        confinedArgv: ConfinedArgv | undefined,
+        sandboxMode: string | undefined,
+      ): BashResult => {
+        const out = handle.collected.stdout?.readFrom(0)
+        const err = handle.collected.stderr?.readFrom(0)
+        const stderrText = err?.text ?? ''
+        const denied = confinedArgv !== undefined
+          && outcome.exitCode !== 0
+          && confinedArgv.denialSignatures.some((signature) => stderrText.toLowerCase().includes(signature.toLowerCase()))
+        return {
+          exitCode: outcome.exitCode,
+          signal: outcome.signal,
+          timedOut: classification.timedOut,
+          aborted: classification.aborted,
+          timeoutMs: classification.timeoutMs,
+          stdout: {
+            text: out?.text ?? '',
+            truncated: out?.lossy ?? false,
+            // spillPath 仅在溢出发生且 spill 文件完好时由 reader 返回，条件展开与官方一致。
+            ...out?.spillPath !== undefined ? { spillPath: out.spillPath } : {},
+          },
+          stderr: {
+            text: stderrText,
+            truncated: err?.lossy ?? false,
+            ...err?.spillPath !== undefined ? { spillPath: err.spillPath } : {},
+          },
+          ...denied ? { sandbox: { mode: sandboxMode ?? 'read-only', denied: true } } : {},
+        }
+      }
+
+      /**
+       * 共享的 job 注册（官方 startJob 对齐）：后台路径与前台 promote 路径共用同一份
+       * owner/output/run 逻辑。注册表只在 spec.output 非空时启动 pump，旧版
+       * run().readOutput 钩子已不被读取；spawn 发生在 run() 里而注册表的首次 drain
+       * 早于它 ⇒ 源必须惰性绑定，读写共用同一份非消费的 collected 流。
+       */
+      const startBashJob = (
+        registry: JobRegistry,
+        command: string,
+        exec: ToolRunContext,
+        spawnSpec: (signal: AbortSignal | undefined) => SubprocessSpawnSpec,
+      ): { id: JobId; process: () => BashProcess | undefined } => {
+        let running: BashProcess | undefined
+        const outputSource = (channel: 'stdout' | 'stderr'): JobOutputSource => ({
+          channel,
+          read: (fromByte) => {
+            const reader = running?.collected[channel]
+            return reader?.readFrom(fromByte) ?? { text: '', nextOffset: fromByte, lossy: false }
+          },
+        })
+        const id = registry.start({
+          kind: 'bash',
+          label: command,
+          // 创建该 job 的工具调用链，留存在生命周期记录里（官方 tool-bash 同款）。
+          toolCall: { callId: exec.callId, rootCallId: exec.rootCallId },
+          // DSH 0.2.0 起 owner 为 SessionId（不再是 Agent 实例）。
+          ...exec.agent ? { owner: exec.agent.id } : {},
+          output: [outputSource('stdout'), outputSource('stderr')],
+          run: () => {
+            running = ctx.subprocess.spawn(spawnSpec(undefined))
+            const handle = running
+            return {
+              cancel: () => handle.terminate(),
+              // 非零退出是命令的结果，不是作业基础设施失败（与官方 tool-bash 同口径）。
+              done: handle.done.then((outcome): JobOutcome => ({
+                status: 'completed',
+                detail: `exit code: ${outcome.exitCode}`,
+              })),
+            }
+          },
+        })
+        return { id, process: () => running }
+      }
+
+      /**
+       * 前台 promote 的限时等待（官方 waitOnJob 对齐）：定时内落定 → 摘除记录并返回
+       * 前台结果；仍在跑 → 一次消费式读把已产出输出种进结果并返回晋升结果，此后
+       * job_output 恰好从晋升点续读、不重不漏；调用被取消 → 杀 job、等落地、摘除
+       * 记录，再照常抛 AbortError（不另行通知）。
+       *
+       * 官方的「preparation 超时」分支在此不存在：本 seam 的 spawn 是同步的，
+       * startBashJob 返回后 process() 必非空；spawn 同步失败会从 registry.start
+       * 抛出，由调用方按「注册被拒」退回前台到期杀路径。
+       */
+      const waitOnBashJob = async (
+        registry: JobRegistry,
+        attached: { id: JobId; process: () => BashProcess | undefined },
+        exec: ToolRunContext,
+        timeoutMs: number,
+        confinedArgv: ConfinedArgv | undefined,
+        sandboxMode: string | undefined,
+      ): Promise<BashResult | PromotedBashResult> => {
+        const owner = exec.agent?.id
+        // 以本次调用自己的名义停掉 job 并等它落定：结算被标记为 awaited，不会再生成本
+        // 该由本结果承载的完成通知；模型从未见过这个 id，记录随之摘除。
+        const stop = async (reason: string): Promise<void> => {
+          registry.kill(attached.id, owner, reason)
+          const settled = await registry.wait(attached.id, timeoutMs, owner)
+          if (settled.status !== 'running' && settled.status !== 'stopping') registry.remove(attached.id, owner)
+        }
+        let view: JobView
+        try {
+          view = await registry.wait(attached.id, timeoutMs, owner, exec.signal)
+        } catch {
+          // 对自己名下的活 job，wait 只会因调用方取消而拒绝：这次调用结束了，命令随之
+          // 终止——与前台到期杀同口径。
+          await stop('tool call aborted')
+          const error = new HarnessError('tool call aborted', TOOL_ABORTED)
+          error.name = 'AbortError'
+          throw error
+        }
+        if (view.status === 'running' || view.status === 'stopping') {
+          // 等待到点仍在跑：晋升为后台 job。registry.read 推进模型消费游标，是
+          // 「不重不漏」的来源；游标落后于 ring 时按官方口径补 dropped-output 通知。
+          // （subprocess handle 不暴露运行中的沙箱事实，晋升点不渲染沙箱通知。）
+          const read = registry.read(attached.id, owner)
+          const delta = ringDelta(read.chunks)
+          const notices: string[] = []
+          if (read.lossy) {
+            const spillPaths = read.job.output.spillPaths ?? []
+            notices.push(`[some output was dropped from memory; full output: ${spillPaths.length > 0 ? spillPaths.join(', ') : '(unavailable)'}]`)
+          }
+          const output = notices.length === 0
+            ? delta
+            : `${delta}${delta.length > 0 && !delta.endsWith('\n') ? '\n' : ''}${notices.join('\n')}`
+          return { kind: 'promoted', jobId: attached.id, timeoutMs, output }
+        }
+        // 定时内落定：记录随结果一起离开注册表（模型从未见过 id）。
+        registry.remove(attached.id, owner)
+        const handle = attached.process()
+        if (handle === undefined) throw new Error(view.detail ?? 'bash job settled without a running process')
+        const outcome = await handle.done
+        const result = collectForegroundResult(
+          handle,
+          outcome,
+          { timedOut: false, aborted: exec.signal?.aborted === true, timeoutMs },
+          confinedArgv,
+          sandboxMode,
+        )
+        if (result.aborted) {
+          const error = new HarnessError('tool call aborted', TOOL_ABORTED)
+          error.name = 'AbortError'
+          throw error
+        }
+        return result
+      }
+
       try {
         bashDisposer = ctx.tools.register(defineTool({
           name: 'bash',
@@ -393,18 +600,32 @@ export function apply(ctx: AppContext, config: Config): void {
                 + '5-10 words (shown in the UI). Examples: "ls" → "List files in current directory"; '
                 + '"git status" → "Show working tree status".',
             },
-            timeoutMs: { type: 'number', description: 'Timeout in milliseconds. Defaults to 120000, capped at 600000 (both configurable); the command is killed on expiry.' },
+            // 双态文案（官方 531-534 对齐）：晋升可用与否是注册期事实。
+            timeoutMs: {
+              type: 'number',
+              description: promoteAvailable
+                ? 'Timeout in milliseconds. Defaults to 120000, capped at 600000 (both configurable); on expiry the command moves to the background as a job instead of being killed.'
+                : 'Timeout in milliseconds. Defaults to 120000, capped at 600000 (both configurable); the command is killed on expiry.',
+            },
             workdir: { type: 'string', description: 'Working directory for this command. Defaults to the session workspace; a relative path is resolved against it.' },
-            run_in_background: { type: 'boolean' as const, description: 'Run in the background and return a job id immediately (collect with job_output, stop with job_kill). No timeout applies.' },
-            sandbox_permissions: {
-              type: 'string' as const,
-              enum: [...ESCALATION_TARGETS],
-              description: 'The wider sandbox mode this command needs. Only valid as a one-shot retry of a command the sandbox just denied; requires justification and user approval.',
-            },
-            justification: {
-              type: 'string' as const,
-              description: 'Required with sandbox_permissions: one sentence for the user explaining why this exact command needs the wider access.',
-            },
+            // run_in_background 仅在 jobs 服务存在时注册（能力在组合期固定）。
+            ...(jobsAvailable
+              ? { run_in_background: { type: 'boolean' as const, description: 'Run in the background and return a job id immediately (collect with job_output, stop with job_kill). No timeout applies.' } }
+              : {}),
+            // 沙箱升级面存在时才注册升级参数。
+            ...(escalationModes.length > 0
+              ? {
+                  sandbox_permissions: {
+                    type: 'string' as const,
+                    enum: [...ESCALATION_TARGETS],
+                    description: 'The wider sandbox mode this command needs. Only valid as a one-shot retry of a command the sandbox just denied; requires justification and user approval.',
+                  },
+                  justification: {
+                    type: 'string' as const,
+                    description: 'Required with sandbox_permissions: one sentence for the user explaining why this exact command needs the wider access.',
+                  },
+                }
+              : {}),
           },
           output: {
             schema: {
@@ -421,9 +642,21 @@ export function apply(ctx: AppContext, config: Config): void {
                   type: 'object',
                   additionalProperties: false,
                   properties: {
+                    kind: { type: 'string', required: true, const: 'promoted' },
+                    jobId: { type: 'string', required: true },
+                    timeoutMs: { type: 'number', required: true },
+                    output: { type: 'string', required: true },
+                  },
+                },
+                {
+                  type: 'object',
+                  additionalProperties: false,
+                  properties: {
                     exitCode: { required: true, oneOf: [{ type: 'integer' }, { type: 'null' }] },
+                    signal: { required: true, oneOf: [{ type: 'string' }, { type: 'null' }] },
                     timedOut: { type: 'boolean', required: true },
                     aborted: { type: 'boolean', required: true },
+                    timeoutMs: { type: 'number', required: true },
                     stdout: {
                       type: 'object',
                       additionalProperties: false,
@@ -457,9 +690,12 @@ export function apply(ctx: AppContext, config: Config): void {
               ],
             },
             render: (_args: unknown, value: unknown) => {
-              const v = value as BashResult | { kind: 'background'; jobId: string }
+              const v = value as BashResult | PromotedBashResult | { kind: 'background'; jobId: string }
               if (typeof v === 'object' && v !== null && 'kind' in v && v.kind === 'background') {
                 return [{ type: 'text', text: `started background job ${v.jobId}` }]
+              }
+              if (typeof v === 'object' && v !== null && 'kind' in v && v.kind === 'promoted') {
+                return [{ type: 'text', text: renderPromotedBash(v) }]
               }
               return [{ type: 'text', text: renderBashResult(v as BashResult, escalationModes) }]
             },
@@ -533,11 +769,13 @@ export function apply(ctx: AppContext, config: Config): void {
               env: { ...MODEL_ENV_OVERRIDES, ...collectDshEnv() },
             })
 
-            // 后台：jobs 通道。注册表只在 spec.output 非空时启动 pump；旧版
-            // run().readOutput 钩子已不被读取，缺 output 会让后台输出恒为空
-            //（完成通知只能说「没有新输出」）。读写共用同一份非消费的 collected 流。
+            // 配置快照与 jobs 可用性：与 workdir/sandbox 一样在 execute 入口读一次
+            // readConfig(source()) 快照；jobs 用探测式读取（未组合时为 undefined）。
+            const cfg = readConfig(source())
+            const jobs = ctx.get('jobs')
+
+            // 后台：jobs 通道，job 注册逻辑与前台 promote 路径共用 startBashJob。
             if (args.run_in_background === true) {
-              const jobs = ctx.get('jobs')
               if (jobs === undefined) {
                 throw new Error('background jobs unavailable: load @deepseek-ai/dsh-jobs and @deepseek-ai/dsh-tool-jobs')
               }
@@ -546,45 +784,32 @@ export function apply(ctx: AppContext, config: Config): void {
                 error.name = 'AbortError'
                 throw error
               }
-              // spawn 发生在 run() 里，而注册表的首次 drain 早于它 ⇒ 源必须惰性绑定。
-              let running: ReturnType<typeof ctx.subprocess.spawn> | undefined
-              const outputSource = (channel: 'stdout' | 'stderr'): JobOutputSource => ({
-                channel,
-                read: (fromByte) => {
-                  const reader = running?.collected[channel]
-                  return reader?.readFrom(fromByte) ?? { text: '', nextOffset: fromByte, lossy: false }
-                },
-              })
-              const id = jobs.start({
-                kind: 'bash',
-                label: args.command,
-                // DSH 0.2.0 起 owner 为 SessionId（不再是 Agent 实例）。
-                ...exec.agent ? { owner: exec.agent.id } : {},
-                output: [outputSource('stdout'), outputSource('stderr')],
-                run: () => {
-                  running = ctx.subprocess.spawn(spawnSpec(undefined))
-                  const handle = running
-                  return {
-                    cancel: () => handle.terminate(),
-                    // 非零退出是命令的结果，不是作业基础设施失败（与官方 tool-bash 同口径）。
-                    done: handle.done.then((outcome): JobOutcome => ({
-                      status: 'completed',
-                      detail: `exit code: ${outcome.exitCode}`,
-                    })),
-                  }
-                },
-              })
-              return { kind: 'background' as const, jobId: id }
+              return { kind: 'background' as const, jobId: startBashJob(jobs, args.command, exec, spawnSpec).id }
             }
 
-            // 前台。超时取值：请求值有效（有限正数）则用请求值，否则用配置默认；
+            // 前台超时取值：请求值有效（有限正数）则用请求值，否则用配置默认；
             // 最终按 maxTimeoutMs 截断（官方对齐口径：默认 120000 / 上限 600000）。
-            // 与 workdir/sandbox 一样在 execute 入口读一次 readConfig(source()) 快照。
-            const cfg = readConfig(source())
             const requestedTimeoutMs = args.timeoutMs !== undefined && Number.isFinite(args.timeoutMs) && args.timeoutMs > 0
               ? args.timeoutMs
               : cfg.timeoutMs
             const timeoutMs = Math.min(requestedTimeoutMs, cfg.maxTimeoutMs)
+
+            // 前台 promote（官方 698-723 口径）：jobs 可用且配置开启时，先把命令注册成
+            // job，再限时等待到落定或超时；注册被拒（预检拒绝或启动失败）则按官方口径
+            // 警告后退回「前台 + 到期杀」路径。
+            if (jobs !== undefined && cfg.promoteOnTimeout) {
+              let attached: ReturnType<typeof startBashJob> | undefined
+              try {
+                attached = startBashJob(jobs, args.command, exec, spawnSpec)
+              } catch (error) {
+                ctx.logger.warn('[shell-policy] bash: job registration refused, running in the foreground with the timeout kill instead: %s', String(error))
+              }
+              if (attached !== undefined) {
+                return await waitOnBashJob(jobs, attached, exec, timeoutMs, confined, policy?.mode)
+              }
+            }
+
+            // 前台（到期杀）：promote 关闭 / 无 jobs 服务 / 注册被拒时也走这里。
             const controller = new AbortController()
             const timer = setTimeout(() => controller.abort(), timeoutMs)
             const onAbort = (): void => controller.abort()
@@ -592,29 +817,11 @@ export function apply(ctx: AppContext, config: Config): void {
             try {
               const handle = ctx.subprocess.spawn(spawnSpec(controller.signal))
               const outcome = await handle.done
-              const out = handle.collected.stdout?.readFrom(0)
-              const err = handle.collected.stderr?.readFrom(0)
-              const stderrText = err?.text ?? ''
-              const denied = confined !== undefined
-                && outcome.exitCode !== 0
-                && confined.denialSignatures.some((signature) => stderrText.toLowerCase().includes(signature.toLowerCase()))
-              const result: BashResult = {
-                exitCode: outcome.exitCode,
+              const result = collectForegroundResult(handle, outcome, {
                 timedOut: controller.signal.aborted && exec.signal?.aborted !== true,
                 aborted: exec.signal?.aborted === true,
-                stdout: {
-                  text: out?.text ?? '',
-                  truncated: out?.lossy ?? false,
-                  // spillPath 仅在溢出发生且 spill 文件完好时由 reader 返回，条件展开与官方一致。
-                  ...out?.spillPath !== undefined ? { spillPath: out.spillPath } : {},
-                },
-                stderr: {
-                  text: stderrText,
-                  truncated: err?.lossy ?? false,
-                  ...err?.spillPath !== undefined ? { spillPath: err.spillPath } : {},
-                },
-                ...denied ? { sandbox: { mode: policy?.mode ?? 'read-only', denied: true } } : {},
-              }
+                timeoutMs,
+              }, confined, policy?.mode)
               if (result.aborted) {
                 const error = new HarnessError('tool call aborted', TOOL_ABORTED)
                 error.name = 'AbortError'
@@ -633,12 +840,15 @@ export function apply(ctx: AppContext, config: Config): void {
             description: args.description,
             ...args.workdir !== undefined ? { cwd: args.workdir } : {},
           }),
-          presentResult: (args: unknown, result: { content: Array<{ type: string; text?: string }>; isError: boolean }) => {
+          presentResult: (args: unknown, result: { content: Array<{ type: string; text?: string }>; isError: boolean; value?: unknown }) => {
             const block = result.content.length === 1 ? result.content[0] : undefined
             if (block === undefined || block.type !== 'text' || block.text === undefined) return undefined
             const raw = block.text
             const isBackground = typeof args === 'object' && args !== null && (args as { run_in_background?: unknown }).run_in_background === true
-            if (isBackground || result.isError) {
+            // 官方同款：成功结果运行时带 value（ToolResult 类型不声明，宿主 materialize
+            // 时附上），晋升结果没有 exit pill，与后台确认一样用 generic 围栏卡片。
+            const isPromoted = typeof result.value === 'object' && result.value !== null && (result.value as { kind?: unknown }).kind === 'promoted'
+            if (isBackground || isPromoted || result.isError) {
               return { card: 'generic', content: [{ type: 'text', text: `\`\`\`console\n${raw.replace(/\n+$/, '')}\n\`\`\`` }] }
             }
             const { body, ...exit } = parseExitStatus(raw)
@@ -646,11 +856,13 @@ export function apply(ctx: AppContext, config: Config): void {
           },
         }))
         registerError = undefined
+        registeredPromoteAvailable = promoteAvailable
         ctx.logger.info('[shell-policy] bash 工具已注册（%s）', probe.path)
       } catch (error) {
         bashDisposer = undefined
         effective = 'pwsh'
         registerError = String(error)
+        registeredPromoteAvailable = undefined
         ctx.logger.warn('[shell-policy] bash 工具注册失败，回落 pwsh: %s', registerError)
       }
     } else {
