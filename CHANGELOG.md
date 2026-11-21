@@ -2,7 +2,7 @@
 
 本项目的所有重要变更记录于此。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
-## [0.2.0] - 2026-11-21
+## [0.1.2] - 2026-11-21
 
 本版是独立仓库的首个版本：脱离 fork 网络，以新名 `dsh-windows-bash` 发布（GitHub 仓库与 npm 包同名）。出处与归属见 [NOTICE](NOTICE)。
 
