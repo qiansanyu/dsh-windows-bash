@@ -1,5 +1,5 @@
 /**
- * dsh-windows-shell-policy — Windows 默认 Shell 策略组合插件（host 侧）。
+ * dsh-windows-bash — Windows 默认 Shell 策略组合插件（host 侧）。
  *
  * 职责：
  * 1. 探测 git-bash / MSYS2 / Cygwin 可执行文件（显式 bashPath → 常见安装路径 → PATH）。
@@ -11,7 +11,7 @@
  * 4. bash 工具对齐官方 shell 工具：session cwd 解析、文件沙箱（confine +
  *    sandbox_permissions 升级）、run_in_background（jobs 通道）、前台超时晋升
  *    后台（promote-on-timeout）、终端卡片展示。
- * 5. 提供 /dsh-shell-policy/api 供 client 卡片读写状态与配置（仅接受本机 GUI 来源请求）。
+ * 5. 提供 /dsh-windows-bash/api 供 client 卡片读写状态与配置（仅接受本机 GUI 来源请求）。
  * 6. 非 Windows 平台直接跳过（DSH 默认 bash 工具已可用），仅保留状态 API。
  */
 import type { Context, Volatile } from 'cordis'
@@ -44,11 +44,11 @@ declare module '@deepseek-ai/dsh-jobs' {
   }
 }
 
-export const name = 'dsh-windows-shell-policy'
+export const name = 'dsh-windows-bash'
 export const inject = ['tools', 'subprocess', 'systemPrompt', 'webServer']
 
 /** 本插件的包名（也是 profile entry 的 name，用于解析自身 entry id）。 */
-const PKG_NAME = 'dsh-windows-shell-policy'
+const PKG_NAME = 'dsh-windows-bash'
 
 /**
  * 解析本插件在 profile 中的 entry id。
@@ -891,7 +891,7 @@ export function apply(ctx: AppContext, config: Config): void {
   // 回环来源准入（isLocalGuiRequest）。
   ctx.effect(() => ctx.webServer.register({
     kind: 'prefix',
-    path: '/dsh-shell-policy/api',
+    path: '/dsh-windows-bash/api',
     handler: async (req: any, res: any) => {
       const url = String(req.url ?? '')
       const send = (code: number, body: unknown): void => {
@@ -987,7 +987,7 @@ export function apply(ctx: AppContext, config: Config): void {
       }
       send(404, { ok: false, error: 'not found' })
     },
-  }), 'dsh-windows-shell-policy: status api')
+  }), 'dsh-windows-bash: status api')
 
   // 非 Windows：DSH 默认 bash 工具已可用，本插件跳过（不注册工具、不过滤、不注册引导）。
   if (!isWindows) {
@@ -1002,7 +1002,7 @@ export function apply(ctx: AppContext, config: Config): void {
   const settings = ctx.get('settings') as { configure?(presentation: { auto?: boolean }): () => void } | undefined
   if (settings !== undefined && typeof settings.configure === 'function') {
     try {
-      ctx.effect(() => (settings.configure as (p: { auto?: boolean }) => () => void)({ auto: true }), 'dsh-windows-shell-policy: settings form')
+      ctx.effect(() => (settings.configure as (p: { auto?: boolean }) => () => void)({ auto: true }), 'dsh-windows-bash: settings form')
     } catch (error) {
       ctx.logger.warn('[shell-policy] settings.configure 不可用（忽略）: %s', String(error))
     }
@@ -1058,5 +1058,5 @@ export function apply(ctx: AppContext, config: Config): void {
   ctx.effect(() => () => {
     bashDisposer?.()
     bashDisposer = undefined
-  }, 'dsh-windows-shell-policy: bash tool cleanup')
+  }, 'dsh-windows-bash: bash tool cleanup')
 }

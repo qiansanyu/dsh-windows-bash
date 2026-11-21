@@ -1,11 +1,11 @@
 /**
- * dsh-windows-shell-policy — client 配置卡片（settings.plugin.item slot）。
+ * dsh-windows-bash — client 配置卡片（settings.plugin.item slot）。
  *
  * 在「设置 - 插件 - 插件配置」面板注册「默认 Shell」卡片，折叠式
  * （与官方「终端 / Agent 循环 / 网页搜索」卡片同构）：头部按钮命名插件
  * 并描述其配置，点击展开控件；折叠时保留 staged 编辑并在头部标记
  * 「未保存」。控件：自动 / bash / pwsh 三选一 + 显式 bash 路径输入框。
- * 读写走 host 插件自己的 API（/dsh-shell-policy/api/status、/preferred、
+ * 读写走 host 插件自己的 API（/dsh-windows-bash/api/status、/preferred、
  * /bashpath）——settings 的 client 端 RPC 有 apiproxy allowlist 限制，
  * 本插件 namespace 不在其中，故不依赖 settingsScope；host 端仍经
  * settings 服务持久化。监听 settings/document-updated 事件实时刷新状态。
@@ -292,7 +292,7 @@ function ShellPolicyCard(props: { view?: 'summary' | 'page'; remote: ClientConte
   const [failed, setFailed] = useState(false)
 
   const load = (): void => {
-    fetch('/dsh-shell-policy/api/status')
+    fetch('/dsh-windows-bash/api/status')
       .then((r) => r.json())
       .then((s) => setStatus(s as Status))
       .catch(() => setStatus(null))
@@ -318,7 +318,7 @@ function ShellPolicyCard(props: { view?: 'summary' | 'page'; remote: ClientConte
     setFailed(false)
     const writes: Promise<unknown>[] = []
     if (draft !== null && draft !== current) {
-      writes.push(fetch('/dsh-shell-policy/api/preferred', {
+      writes.push(fetch('/dsh-windows-bash/api/preferred', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ preferred: draft }),
@@ -327,7 +327,7 @@ function ShellPolicyCard(props: { view?: 'summary' | 'page'; remote: ClientConte
       }))
     }
     if (draftBashPath !== null && draftBashPath !== currentBashPath) {
-      writes.push(fetch('/dsh-shell-policy/api/bashpath', {
+      writes.push(fetch('/dsh-windows-bash/api/bashpath', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ bashPath: draftBashPath }),
@@ -468,11 +468,11 @@ export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.slots.inject('plugins.bundle.config', () =>
     ctx.slots.register({
       name: 'plugins.bundle.config',
-      key: 'dsh-windows-shell-policy',
+      key: 'dsh-windows-bash',
       label: () => '默认 Shell',
       inject: () => ({ remote }),
     } as any, ShellPolicyCard as any),
-  ), 'dsh-windows-shell-policy: bundle config page')
+  ), 'dsh-windows-bash: bundle config page')
 
   // 0.1.x 兼容：旧版「设置 → 插件 → 插件配置」的卡片槽位（0.2.0 已移除该槽位，
   // slots.inject 对未声明的槽位不会执行回调，因此无副作用）。
@@ -485,5 +485,5 @@ export function apply(ctx: ClientContext): void {
       label: () => '默认 Shell',
       inject: () => ({ remote }),
     } as any, ShellPolicyCard as any),
-  ), 'dsh-windows-shell-policy: legacy settings card')
+  ), 'dsh-windows-bash: legacy settings card')
 }

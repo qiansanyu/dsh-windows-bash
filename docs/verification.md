@@ -27,7 +27,7 @@
 场景 3 可以纯 HTTP 驱动（卡片后端就是它）：
 
 ```sh
-curl -s -X POST http://127.0.0.1:<port>/dsh-shell-policy/api/preferred \
+curl -s -X POST http://127.0.0.1:<port>/dsh-windows-bash/api/preferred \
   -H 'content-type: application/json' -H 'origin: http://127.0.0.1:<port>' \
   -d '{"preferred":"pwsh"}'
 # {"ok":true,"preferred":"pwsh","effective":"pwsh"}
@@ -44,7 +44,7 @@ DSH_HOME=$(cygpath -w $H) dsh web --no-open --port 4123
 ```
 
 profile patch 里至少要有：`agent-preset-registry.default: standard`（本插件的前提是官方 `tool-pwsh` 在该
-preset 里启用）、本插件自己那条 `- id: dsh-windows-shell-policy` 配置，以及 `ui-settings-general.welcomeNoticeVersion`
+preset 里启用）、本插件自己那条 `- id: dsh-windows-bash` 配置，以及 `ui-settings-general.welcomeNoticeVersion`
 （否则首启的"预览版说明"弹窗会盖住 composer）。
 
 ## 已知未覆盖

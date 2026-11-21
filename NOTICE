@@ -7,8 +7,8 @@
 
 | 项 | 值 |
 | --- | --- |
+| 本仓库包名 | `dsh-windows-bash`（npm 与 GitHub 同名；原 npm 名 `dsh-windows-shell-policy` 归原作者，最后发布 0.0.7） |
 | 上游仓库 | https://github.com/LAN-TINA-WS/dsh-windows-shell-policy |
-| 上游 npm 包 | `dsh-windows-shell-policy`（最后发布 0.0.7，不含本仓库的修复） |
 | 原版权 | Copyright (c) 2026 LAN-TINA-WS |
 | 本仓库基线 | 上游 0.0.7（首个提交 `3fa4e8d`，提交信息 "baseline: dsh-windows-shell-policy v0.0.7 as received (before hardening)"） |
 | 本仓库维护 | qiansanyu（https://github.com/qiansanyu） |
@@ -22,3 +22,5 @@
 4. **文档**：README（中/英）与 `docs/` 同步新机制。
 
 除上述改动外，设计与实现来自上游；上游历史提交的作者信息保留在 git 历史中。
+
+0.2.0：脱离 fork 网络，独立为 `dsh-windows-bash`（包名/插件标识/API 路由同步更名；`[shell-policy]` 日志前缀等域语义标识不变）。

@@ -1,5 +1,5 @@
 /**
- * dsh-windows-shell-policy — Windows 默认 Shell 策略组合插件（host 侧）。
+ * dsh-windows-bash — Windows 默认 Shell 策略组合插件（host 侧）。
  *
  * 职责：
  * 1. 探测 git-bash / MSYS2 / Cygwin 可执行文件（显式 bashPath → 常见安装路径 → PATH）。
@@ -11,7 +11,7 @@
  * 4. bash 工具对齐官方 shell 工具：session cwd 解析、文件沙箱（confine +
  *    sandbox_permissions 升级）、run_in_background（jobs 通道）、前台超时晋升
  *    后台（promote-on-timeout）、终端卡片展示。
- * 5. 提供 /dsh-shell-policy/api 供 client 卡片读写状态与配置（仅接受本机 GUI 来源请求）。
+ * 5. 提供 /dsh-windows-bash/api 供 client 卡片读写状态与配置（仅接受本机 GUI 来源请求）。
  * 6. 非 Windows 平台直接跳过（DSH 默认 bash 工具已可用），仅保留状态 API。
  */
 import type { Context, Volatile } from 'cordis';
@@ -21,7 +21,7 @@ declare module '@deepseek-ai/dsh-jobs' {
         bash: 'bash';
     }
 }
-export declare const name = "dsh-windows-shell-policy";
+export declare const name = "dsh-windows-bash";
 export declare const inject: string[];
 export interface Config {
     /**

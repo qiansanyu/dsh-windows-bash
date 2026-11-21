@@ -1,5 +1,5 @@
-# dsh-windows-shell-policy bundle patch: inserts its row into the web plugin roster.
-# Install with: dsh plugin --profile web add github:qiansanyu/dsh-windows-shell-policy
+# dsh-windows-bash bundle patch: inserts its row into the web plugin roster.
+# Install with: dsh plugin --profile web add github:qiansanyu/dsh-windows-bash
 - insert:
-    - id: dsh-windows-shell-policy
-      name: 'dsh-windows-shell-policy'
+    - id: dsh-windows-bash
+      name: 'dsh-windows-bash'

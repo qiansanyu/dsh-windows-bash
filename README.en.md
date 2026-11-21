@@ -1,22 +1,22 @@
-# dsh-windows-shell-policy — Windows Default Shell Policy Plugin
+# dsh-windows-bash — Windows Default Shell Policy Plugin
 
 [中文](README.md) | English
 
 ![Default Shell config card](docs/screenshots/shell-policy-card.png)
 
-[![dsh](https://img.shields.io/badge/dsh-0.2.2--rc.1%20--%200.2.x-informational)](https://github.com/qiansanyu/dsh-windows-shell-policy)
-[![GitHub release](https://img.shields.io/github/v/release/qiansanyu/dsh-windows-shell-policy)](https://github.com/qiansanyu/dsh-windows-shell-policy/releases/latest)
-[![GitHub downloads](https://img.shields.io/github/downloads/qiansanyu/dsh-windows-shell-policy/total)](https://github.com/qiansanyu/dsh-windows-shell-policy/releases)
-[![GitHub stars](https://img.shields.io/github/stars/qiansanyu/dsh-windows-shell-policy)](https://github.com/qiansanyu/dsh-windows-shell-policy)
-[![license](https://img.shields.io/github/license/qiansanyu/dsh-windows-shell-policy)](LICENSE)
+[![dsh](https://img.shields.io/badge/dsh-0.2.2--rc.1%20--%200.2.x-informational)](https://github.com/qiansanyu/dsh-windows-bash)
+[![GitHub release](https://img.shields.io/github/v/release/qiansanyu/dsh-windows-bash)](https://github.com/qiansanyu/dsh-windows-bash/releases/latest)
+[![GitHub downloads](https://img.shields.io/github/downloads/qiansanyu/dsh-windows-bash/total)](https://github.com/qiansanyu/dsh-windows-bash/releases)
+[![GitHub stars](https://img.shields.io/github/stars/qiansanyu/dsh-windows-bash)](https://github.com/qiansanyu/dsh-windows-bash)
+[![license](https://img.shields.io/github/license/qiansanyu/dsh-windows-bash)](LICENSE)
 
-## dsh-windows-shell-policy
+## dsh-windows-bash
 
 A **Windows default shell policy plugin** for DeepSeek Harness. DSH enables PowerShell (pwsh) by default on Windows, but bash dominates LLM training corpora, so agents make significantly more errors running POSIX commands through pwsh. This plugin probes for git-bash/MSYS2/Cygwin, adds a collapsible "Default Shell" card under Settings → Plugins → Plugin config to switch between bash and pwsh, dynamically registers the bash tool, and narrows the tool surface per agent with `tools.restrict` so the agent faces exactly one shell tool — the one that actually runs.
 
 > **Provenance**: this repository is now maintained independently, based on [LAN-TINA-WS/dsh-windows-shell-policy](https://github.com/LAN-TINA-WS/dsh-windows-shell-policy) — taken over by [qiansanyu](https://github.com/qiansanyu) after upstream stopped following DSH; 0.1.0 adapts it to dsh 0.2.2. The original project is MIT; copyright and provenance live in [NOTICE](NOTICE).
 >
-> [Latest Release](https://github.com/qiansanyu/dsh-windows-shell-policy/releases/latest) · [dsh-plugin ecosystem](https://github.com/topics/dsh-plugin) · [Feedback](https://github.com/qiansanyu/dsh-windows-shell-policy/issues)
+> [Latest Release](https://github.com/qiansanyu/dsh-windows-bash/releases/latest) · [dsh-plugin ecosystem](https://github.com/topics/dsh-plugin) · [Feedback](https://github.com/qiansanyu/dsh-windows-bash/issues)
 
 ## Showcase
 
@@ -37,15 +37,15 @@ A **Windows default shell policy plugin** for DeepSeek Harness. DSH enables Powe
 **GitHub direct install (recommended, fastest in CN, no npm wait)**:
 
 ```sh
-dsh plugin --profile web add github:qiansanyu/dsh-windows-shell-policy
+dsh plugin --profile web add github:qiansanyu/dsh-windows-bash
 # restart dsh web, open Settings → Plugins → Plugin config
 ```
 
-**npm**: the `dsh-windows-shell-policy` package on npm is the upstream legacy (0.0.7, predating the dsh 0.2.2 adaptation); this repository will publish under a new package name once chosen. Until then, prefer the GitHub direct install or the Release ZIP above.
+**npm**: this repository publishes as `dsh-windows-bash` (the `dsh-windows-shell-policy` package on npm is the upstream legacy 0.0.7, predating the dsh 0.2.2 adaptation — don't confuse them). Once the npm channel is live, install with `npm i -g dsh-windows-bash`; until then prefer the GitHub direct install or the Release ZIP above.
 
 **Release ZIP install**:
 
-1. Download `dsh-windows-shell-policy-v*.zip` from [Releases](https://github.com/qiansanyu/dsh-windows-shell-policy/releases/latest) and unzip
+1. Download `dsh-windows-bash-v*.zip` from [Releases](https://github.com/qiansanyu/dsh-windows-bash/releases/latest) and unzip
 2. `dsh plugin --profile web add link:<unzipped dir>`
 3. Restart `dsh web`, open Settings → Plugins → Plugin config
 
@@ -66,11 +66,11 @@ Expand the "Default Shell" card under Settings → Plugins → Plugin config:
 | bash | Force git-bash (falls back to pwsh with a notice when no bash is found) |
 | pwsh | Force PowerShell (DSH default behavior) |
 
-Changes take effect on the next request after saving; `preferred` persists in the settings document `shell-policy` section across restarts. An explicit bash path can be set via `shell-policy.bashPath` in settings.yaml (card editing is on the roadmap).
+Changes take effect on the next request after saving; `preferred` and the bash path persist in the plugin's entry config via the settings service across restarts. The explicit bash path is editable directly on the config card.
 
 ## Feedback
 
-Issues, feature requests, usage experience: file at [issue #1 (feedback welcome)](https://github.com/qiansanyu/dsh-windows-shell-policy/issues/1).
+Issues, feature requests, usage experience: file at [issue #1 (feedback welcome)](https://github.com/qiansanyu/dsh-windows-bash/issues/1).
 
 ## Contributors
 

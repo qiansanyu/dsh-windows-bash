@@ -1,22 +1,22 @@
-# dsh-windows-shell-policy — Windows 默认 Shell 策略插件
+# dsh-windows-bash — Windows 默认 Shell 策略插件
 
 中文 | [English](README.en.md)
 
 ![默认 Shell 配置卡片](docs/screenshots/shell-policy-card.png)
 
-[![dsh](https://img.shields.io/badge/dsh-0.2.2--rc.1%20--%200.2.x-informational)](https://github.com/qiansanyu/dsh-windows-shell-policy)
-[![GitHub release](https://img.shields.io/github/v/release/qiansanyu/dsh-windows-shell-policy)](https://github.com/qiansanyu/dsh-windows-shell-policy/releases/latest)
-[![GitHub downloads](https://img.shields.io/github/downloads/qiansanyu/dsh-windows-shell-policy/total)](https://github.com/qiansanyu/dsh-windows-shell-policy/releases)
-[![GitHub stars](https://img.shields.io/github/stars/qiansanyu/dsh-windows-shell-policy)](https://github.com/qiansanyu/dsh-windows-shell-policy)
-[![license](https://img.shields.io/github/license/qiansanyu/dsh-windows-shell-policy)](LICENSE)
+[![dsh](https://img.shields.io/badge/dsh-0.2.2--rc.1%20--%200.2.x-informational)](https://github.com/qiansanyu/dsh-windows-bash)
+[![GitHub release](https://img.shields.io/github/v/release/qiansanyu/dsh-windows-bash)](https://github.com/qiansanyu/dsh-windows-bash/releases/latest)
+[![GitHub downloads](https://img.shields.io/github/downloads/qiansanyu/dsh-windows-bash/total)](https://github.com/qiansanyu/dsh-windows-bash/releases)
+[![GitHub stars](https://img.shields.io/github/stars/qiansanyu/dsh-windows-bash)](https://github.com/qiansanyu/dsh-windows-bash)
+[![license](https://img.shields.io/github/license/qiansanyu/dsh-windows-bash)](LICENSE)
 
-## dsh-windows-shell-policy
+## dsh-windows-bash
 
 DeepSeek Harness 的 **Windows 默认 Shell 策略插件**：DSH 在 Windows 上默认启用 PowerShell（pwsh），而 LLM 训练语料中 bash 占比远高于 PowerShell，agent 执行 POSIX 命令时错误率显著升高。本插件探测 git-bash/MSYS2/Cygwin，在「设置 → 插件 → 插件配置」提供「默认 Shell」折叠卡片一键切换 bash/pwsh，动态注册 bash 工具，并按 agent 用 `tools.restrict` 收敛工具面，让 agent 只面对一个**真能跑的** shell。
 
 > **来源**：本仓库现为独立维护的仓库，源自 [LAN-TINA-WS/dsh-windows-shell-policy](https://github.com/LAN-TINA-WS/dsh-windows-shell-policy)——原作者停止跟进后由 [qiansanyu](https://github.com/qiansanyu) 接手维护，0.1.0 起适配 dsh 0.2.2。原项目 MIT，版权与出处见 [NOTICE](NOTICE)。
 >
-> [最新 Release](https://github.com/qiansanyu/dsh-windows-shell-policy/releases/latest) · [dsh-plugin 生态](https://github.com/topics/dsh-plugin) · [反馈](https://github.com/qiansanyu/dsh-windows-shell-policy/issues)
+> [最新 Release](https://github.com/qiansanyu/dsh-windows-bash/releases/latest) · [dsh-plugin 生态](https://github.com/topics/dsh-plugin) · [反馈](https://github.com/qiansanyu/dsh-windows-bash/issues)
 
 ## 成品展示
 
@@ -37,15 +37,15 @@ DeepSeek Harness 的 **Windows 默认 Shell 策略插件**：DSH 在 Windows 上
 **GitHub 直装（推荐，国内网络最快，免等 npm）**：
 
 ```sh
-dsh plugin --profile web add github:qiansanyu/dsh-windows-shell-policy
+dsh plugin --profile web add github:qiansanyu/dsh-windows-bash
 # 重启 dsh web，打开「设置 → 插件 → 插件配置」开始配置
 ```
 
-**npm 安装**：npm 上的 `dsh-windows-shell-policy` 是上游旧包（0.0.7，不含 dsh 0.2.2 适配）；本仓库的 npm 发布将使用新包名，确定后在此补充安装命令。当前请优先使用上方 GitHub 直装或 Release ZIP。
+**npm 安装**：本仓库以新包名 `dsh-windows-bash` 发布 npm（npm 上的 `dsh-windows-shell-policy` 是上游旧包 0.0.7，不含 dsh 0.2.2 适配，勿混淆）。npm 发布通道就绪后安装命令为 `npm i -g dsh-windows-bash`；当前请优先使用上方 GitHub 直装或 Release ZIP。
 
 **Release ZIP 安装**：
 
-1. 从 [Releases](https://github.com/qiansanyu/dsh-windows-shell-policy/releases/latest) 下载 `dsh-windows-shell-policy-v*.zip` 并解压
+1. 从 [Releases](https://github.com/qiansanyu/dsh-windows-bash/releases/latest) 下载 `dsh-windows-bash-v*.zip` 并解压
 2. `dsh plugin --profile web add link:<解压目录>`
 3. 重启 `dsh web`，打开「设置 → 插件 → 插件配置」开始配置
 
@@ -66,11 +66,11 @@ dev_inject_plugin <本目录>                      # host+UI 即时生效
 | bash | 强制 git-bash（未探测到 bash 时回落 pwsh 并提示） |
 | pwsh | 强制 PowerShell（维持 DSH 默认行为） |
 
-切换保存后下一次请求生效；`preferred` 持久化于 settings 文档 `shell-policy` section，重启保留。显式 bash 路径可通过 settings.yaml 的 `shell-policy.bashPath` 配置（面板编辑在规划中）。
+切换保存后下一次请求生效；`preferred` 与 bashPath 经 settings 服务持久化于本插件 entry config，重启保留。显式 bash 路径可直接在配置面板编辑。
 
 ## 反馈
 
-问题、需求、使用体验：提交到 [issue #1（欢迎反馈）](https://github.com/qiansanyu/dsh-windows-shell-policy/issues/1)。
+问题、需求、使用体验：提交到 [issue #1（欢迎反馈）](https://github.com/qiansanyu/dsh-windows-bash/issues/1)。
 
 ## 贡献者
 

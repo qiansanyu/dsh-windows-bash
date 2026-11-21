@@ -2,6 +2,16 @@
 
 本项目的所有重要变更记录于此。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [0.2.0] - 2026-11-21
+
+本版是独立仓库的首个版本：脱离 fork 网络，以新名 `dsh-windows-bash` 发布（GitHub 仓库与 npm 包同名）。出处与归属见 [NOTICE](NOTICE)。
+
+### 变更
+
+- **包与插件标识更名**：npm/GitHub 包名、cordis 插件名（`export const name`）、profile entry 解析（`PKG_NAME`）、client bundle 配置页 key（`plugins.bundle.config` 的 key = 包名，不同步会导致配置页不渲染）、client bundle loader id（`tsdown.config.ts` 的 `PLUGIN_ID`）、bundle patch 装配 id、状态/配置 API 路由前缀（`/dsh-shell-policy/api` → `/dsh-windows-bash/api`）同步更名为 `dsh-windows-bash`；`[shell-policy]` 日志前缀、systemPrompt section 名等域语义标识保持不变
+- **迁移注意**：新旧是两个不同的 profile entry——旧版 `dsh-windows-shell-policy` 需 `dsh plugin remove` 手动卸载，其中已保存的 `preferred`/`bashPath` 不自动迁移（重装后回到默认 `auto`，探测到 bash 即生效，通常无感）；安装命令改为 `dsh plugin --profile web add github:qiansanyu/dsh-windows-bash`
+- **文档清洗**：能力清单对齐 0.2.2 事实（settings 持久化走 `settings.mutate(entryId)`、配置页主入口 `plugins.bundle.config`）；「设计决策（why）」并入 conventions.md，退役 roadmap 施工流水账；验收判据补充 spill 路径的覆盖说明；README 修正 bashPath「面板编辑在规划中」的过时说法（面板编辑已可用）
+
 ## [0.1.1] - 2026-11-21
 
 本版面向 dsh `0.2.2-rc.5` 宿主：补齐与官方 `tool-bash` 的对齐面（超时晋升、截断回传、结果标记、参数面），并依据本机 106 个 dsh session（7,517 条 bash 命令）的证据分析，把 Windows 专项防呆写进工具描述。
