@@ -1,6 +1,6 @@
 # 插件编写规范与常见失败速查
 
-本插件开发过程中踩过的坑与沉淀的规范（2026-08 至 2026-10 实测）。
+本插件开发过程中踩过的坑与沉淀的规范（2026-08 至 2026-11 实测）。
 
 ## DSH 0.2.0 架构变更（2026-10 适配）
 
@@ -17,9 +17,16 @@
 - **`jobs.start` 的 `owner` 从 `Agent` 实例改为 `SessionId`**（传 `exec.agent.id`）
 - 官方参考实现：`packages/experimental/client-ui-voice-input`（bundle 配置页注册的最佳示例）
 
+## 设计决策（why）
+
+- **自带 bash 工具，不依赖官方 tool-bash**：官方 `tool-bash` 依赖 `ctx.shell`（bash-local / bash-sandbox 提供），Windows 上 bash-sandbox 在 base patch 里 disabled；官方 `bash-local` 直接 spawn `bash`（只认 PATH），没有 pwsh 那样的路径探测。本插件走 subprocess 通道执行显式探测到的 git-bash，动态注册/注销
+- **工具面收敛用 `tools.restrict`，而非注销或瀑布裁剪**：官方 pwsh 工具在 preset 层无法运行时注销；`system-prompt/assemble` 裁剪自 0.2.2-alpha.2 起失效（载荷不再含 tools）。per-agent `tools.restrict({ deny })` 同时收窄下发的 schema 与执行准入集合，且必须在 agent 作用域调用
+- **卡片读写走插件自有 host API**：apiproxy 的 settings RPC 有 namespace allowlist，插件自行注册的 namespace 不被 serve。卡片 fetch 插件自己的 webServer 路由（入口做回环来源准入），host 端仍经 `settings.mutate` 持久化
+- **配置页双注册**：0.2.0 注册 `plugins.bundle.config`（插件详情页 page 视图），同时保留 0.1.x 的 `settings.plugin.item`（折叠卡片）兼容旧宿主
+
 ## 构建
 
-- 构建依赖不再 junction 到 dsh 安装/checkout：junction 目标会随 dsh 升级静默变化；改为 `npm install` 真实下载，7 个 `@deepseek-ai/dsh-*` 在 devDependencies 钉到与运行时一致的精确版本（当前 `0.2.0-rc.2`，对齐 dsh 官方 package.json 的精确版本写法），`package-lock.json` 提交进库保证可复现；dsh 升级时显式改版本 → 重装 → 重编，漂移变成主动动作
+- 构建依赖不再 junction 到 dsh 安装/checkout：junction 目标会随 dsh 升级静默变化；改为 `npm install` 真实下载，7 个 `@deepseek-ai/dsh-*` 在 devDependencies 钉到与运行时一致的精确版本（当前 `0.2.2-rc.5`，对齐 dsh 官方 package.json 的精确版本写法），`package-lock.json` 提交进库保证可复现；dsh 升级时显式改版本 → 重装 → 重编，漂移变成主动动作
 - **必须 `legacy-peer-deps`**（`.npmrc` 已固定）：peer 范围（`>=0.0.1-rc <2`）按 semver 规则无法被 `0.2.0-rc.2` 满足（node-semver 把 `-rc` 版本当 prerelease，且 registry 无稳定发布线），npm 7+ 自动装 peer 会另装旧稳定版或 EOVERRIDE 失败；`overrides` 方案同样会 EOVERRIDE（override 值与 peer 范围冲突）
 - `scripts/build.sh` 探测 `DSH_CHECKOUT`（env → 常见路径），junction link 编译依赖（cordis/schemastery/dsh-tools/dsh-subprocess/dsh-settings 等）后 tsc 编译 host；本仓库已改用 npm install，build.sh 仅作 checkout 开发环境的备选
 - client 用 tsdown 编译为 `lib/client.js`（`window.__ModuleLoader__.load` 注册）；tsdown 从 checkout 的 `node_modules/tsdown/dist/run.mjs` 直接跑（`.bin/tsdown` shell shim 在 git-bash 下有 MSYS 路径转换问题）

@@ -20,7 +20,7 @@
     {
       "name": "LAN-TINA-WS",
       "url": "https://github.com/LAN-TINA-WS",
-      "comment": "原作者；本仓库是 https://github.com/LAN-TINA-WS/dsh-windows-shell-policy 的维护分支"
+      "comment": "原作者；本仓库源自 https://github.com/LAN-TINA-WS/dsh-windows-shell-policy，已独立维护"
     }
   ],
   "keywords": [

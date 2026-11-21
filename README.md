@@ -14,7 +14,7 @@
 
 DeepSeek Harness 的 **Windows 默认 Shell 策略插件**：DSH 在 Windows 上默认启用 PowerShell（pwsh），而 LLM 训练语料中 bash 占比远高于 PowerShell，agent 执行 POSIX 命令时错误率显著升高。本插件探测 git-bash/MSYS2/Cygwin，在「设置 → 插件 → 插件配置」提供「默认 Shell」折叠卡片一键切换 bash/pwsh，动态注册 bash 工具，并按 agent 用 `tools.restrict` 收敛工具面，让 agent 只面对一个**真能跑的** shell。
 
-> **来源**：本仓库是 [LAN-TINA-WS/dsh-windows-shell-policy](https://github.com/LAN-TINA-WS/dsh-windows-shell-policy) 的维护分支（原作者停止跟进后由 [qiansanyu](https://github.com/qiansanyu) 接手维护，0.1.0 起适配 dsh 0.2.2）。原项目 MIT，版权与出处见 [NOTICE](NOTICE)。
+> **来源**：本仓库现为独立维护的仓库，源自 [LAN-TINA-WS/dsh-windows-shell-policy](https://github.com/LAN-TINA-WS/dsh-windows-shell-policy)——原作者停止跟进后由 [qiansanyu](https://github.com/qiansanyu) 接手维护，0.1.0 起适配 dsh 0.2.2。原项目 MIT，版权与出处见 [NOTICE](NOTICE)。
 >
 > [最新 Release](https://github.com/qiansanyu/dsh-windows-shell-policy/releases/latest) · [dsh-plugin 生态](https://github.com/topics/dsh-plugin) · [反馈](https://github.com/qiansanyu/dsh-windows-shell-policy/issues)
 
@@ -41,11 +41,7 @@ dsh plugin --profile web add github:qiansanyu/dsh-windows-shell-policy
 # 重启 dsh web，打开「设置 → 插件 → 插件配置」开始配置
 ```
 
-**npm 安装（仅上游 0.0.7，不含本分支的 0.2.2 修复）**：
-
-```sh
-npm i -g dsh-windows-shell-policy   # 上游包；0.1.0 及之后从本仓库 GitHub 安装
-```
+**npm 安装**：npm 上的 `dsh-windows-shell-policy` 是上游旧包（0.0.7，不含 dsh 0.2.2 适配）；本仓库的 npm 发布将使用新包名，确定后在此补充安装命令。当前请优先使用上方 GitHub 直装或 Release ZIP。
 
 **Release ZIP 安装**：
 
@@ -85,7 +81,7 @@ dev_inject_plugin <本目录>                      # host+UI 即时生效
 
 ## License
 
-本项目采用 [MIT License](LICENSE)。原项目版权归 LAN-TINA-WS 所有，本分支在其之上修改，二者的版权声明都保留在 [LICENSE](LICENSE) 中，出处与改动范围见 [NOTICE](NOTICE)。
+本项目采用 [MIT License](LICENSE)。原项目版权归 LAN-TINA-WS 所有，本仓库在其之上修改，二者的版权声明都保留在 [LICENSE](LICENSE) 中，出处与改动范围见 [NOTICE](NOTICE)。
 
 ## 开发者文档
 
@@ -96,6 +92,6 @@ dev_inject_plugin <本目录>                      # host+UI 即时生效
 | [conventions.md](docs/conventions.md) | 插件编写规范与常见失败速查 |
 | [capabilities-host.md](docs/capabilities-host.md) | DSH Host 服务/事件清单（本插件用到的） |
 | [capabilities-client.md](docs/capabilities-client.md) | DSH Client 槽位/服务清单（本插件用到的） |
-| [roadmap-composition.md](docs/roadmap-composition.md) | 组合插件转正施工记录 |
+| [verification.md](docs/verification.md) | 验收判据：四组场景 + 会话日志取证 |
 
 仓库结构：`src/`（host + client 源码）、`scripts/`（构建）、`docs/`（文档与截图）、`cordis.patch.yml`（bundle patch 装配）。

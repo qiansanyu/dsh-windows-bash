@@ -51,4 +51,4 @@ preset 里启用）、本插件自己那条 `- id: dsh-windows-shell-policy` 配
 
 - **同一 turn 的后续 step 中途切沙箱预设**：restriction 在 `agent/status→running` 与每次提交前重算，
   所以是"下一轮/下次提交"生效（旧实现在每个 step 的 assemble 里换 schema，但执行准入集合没换，本身不一致）
-- 持久终端组件（本插件不提供）、后台作业的大输出 spill 路径
+- 持久终端组件（本插件不提供）；后台作业大输出的 spill 全量路径已自 0.1.1 起覆盖（截断时在 stdout/stderr 末尾回传 spill 文件路径）

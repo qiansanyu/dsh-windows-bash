@@ -1,17 +1,17 @@
 # NOTICE
 
-本仓库是 **LAN-TINA-WS/dsh-windows-shell-policy** 的维护分支（fork），0.1.0 起由 qiansanyu 接手维护。
-原项目采用 MIT 许可，原始版权声明完整保留在 [LICENSE](LICENSE) 中（该文件同时含本分支的版权行）。
+本仓库源自 **LAN-TINA-WS/dsh-windows-shell-policy**（基线为上游 0.0.7，首个提交 `3fa4e8d`），原作者停更后由 qiansanyu 接手维护，现为独立维护的仓库。
+原项目采用 MIT 许可，原始版权声明完整保留在 [LICENSE](LICENSE) 中（该文件同时含本仓库的版权行）。
 
 ## 出处
 
 | 项 | 值 |
 | --- | --- |
 | 上游仓库 | https://github.com/LAN-TINA-WS/dsh-windows-shell-policy |
-| 上游 npm 包 | `dsh-windows-shell-policy`（最后发布 0.0.7，不含本分支的修复） |
+| 上游 npm 包 | `dsh-windows-shell-policy`（最后发布 0.0.7，不含本仓库的修复） |
 | 原版权 | Copyright (c) 2026 LAN-TINA-WS |
-| 本分支基线 | 上游 0.0.7（本仓库首个提交 `3fa4e8d`，提交信息 "baseline: dsh-windows-shell-policy v0.0.7 as received (before hardening)"） |
-| 本分支维护 | qiansanyu（https://github.com/qiansanyu） |
+| 本仓库基线 | 上游 0.0.7（首个提交 `3fa4e8d`，提交信息 "baseline: dsh-windows-shell-policy v0.0.7 as received (before hardening)"） |
+| 本仓库维护 | qiansanyu（https://github.com/qiansanyu） |
 | 许可 | MIT |
 
 ## 相对上游 0.0.7 的改动（0.1.0）

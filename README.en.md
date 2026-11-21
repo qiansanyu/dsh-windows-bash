@@ -14,7 +14,7 @@
 
 A **Windows default shell policy plugin** for DeepSeek Harness. DSH enables PowerShell (pwsh) by default on Windows, but bash dominates LLM training corpora, so agents make significantly more errors running POSIX commands through pwsh. This plugin probes for git-bash/MSYS2/Cygwin, adds a collapsible "Default Shell" card under Settings → Plugins → Plugin config to switch between bash and pwsh, dynamically registers the bash tool, and narrows the tool surface per agent with `tools.restrict` so the agent faces exactly one shell tool — the one that actually runs.
 
-> **Provenance**: this repository is a maintenance fork of [LAN-TINA-WS/dsh-windows-shell-policy](https://github.com/LAN-TINA-WS/dsh-windows-shell-policy), taken over by [qiansanyu](https://github.com/qiansanyu) after upstream stopped following DSH; 0.1.0 adapts it to dsh 0.2.2. The original project is MIT; copyright and provenance live in [NOTICE](NOTICE).
+> **Provenance**: this repository is now maintained independently, based on [LAN-TINA-WS/dsh-windows-shell-policy](https://github.com/LAN-TINA-WS/dsh-windows-shell-policy) — taken over by [qiansanyu](https://github.com/qiansanyu) after upstream stopped following DSH; 0.1.0 adapts it to dsh 0.2.2. The original project is MIT; copyright and provenance live in [NOTICE](NOTICE).
 >
 > [Latest Release](https://github.com/qiansanyu/dsh-windows-shell-policy/releases/latest) · [dsh-plugin ecosystem](https://github.com/topics/dsh-plugin) · [Feedback](https://github.com/qiansanyu/dsh-windows-shell-policy/issues)
 
@@ -41,11 +41,7 @@ dsh plugin --profile web add github:qiansanyu/dsh-windows-shell-policy
 # restart dsh web, open Settings → Plugins → Plugin config
 ```
 
-**npm (upstream 0.0.7 only — it predates the 0.2.2 fix)**:
-
-```sh
-npm i -g dsh-windows-shell-policy   # upstream package; 0.1.0+ ships from this repo's GitHub
-```
+**npm**: the `dsh-windows-shell-policy` package on npm is the upstream legacy (0.0.7, predating the dsh 0.2.2 adaptation); this repository will publish under a new package name once chosen. Until then, prefer the GitHub direct install or the Release ZIP above.
 
 **Release ZIP install**:
 
@@ -96,6 +92,6 @@ Craft notes (authoring conventions, DSH capability lists, composition promotion 
 | [conventions.md](docs/conventions.md) | Plugin authoring conventions and failure quick-reference |
 | [capabilities-host.md](docs/capabilities-host.md) | DSH Host services/events used by this plugin |
 | [capabilities-client.md](docs/capabilities-client.md) | DSH Client slots/services used by this plugin |
-| [roadmap-composition.md](docs/roadmap-composition.md) | Composition promotion log |
+| [verification.md](docs/verification.md) | Acceptance criteria: four scenarios + session-log forensics |
 
 Repo layout: `src/` (host + client sources), `scripts/` (build), `docs/` (docs and screenshots), `cordis.patch.yml` (bundle patch assembly).

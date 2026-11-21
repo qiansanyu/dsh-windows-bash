@@ -1,12 +1,13 @@
 # DSH Client 能力清单（本插件用到的）
 
-本插件 client 侧消费的 DSH Client 槽位与服务（2026-08 实测，基于 deepseek-harness checkout）。
+本插件 client 侧消费的 DSH Client 槽位与服务（2026-11 修订，基于 dsh 0.2.2-rc.5）。
 
 ## 槽位（slots）
 
 | 槽位 | 声明方 | 本插件用途 |
 | --- | --- | --- |
-| `settings.plugin.item` | `@deepseek-ai/dsh-client-ui-settings-plugins` | 注册「默认 Shell」折叠卡片（list slot，需 `id`/`order`） |
+| `plugins.bundle.config` | 插件管理页（ui-plugin-manager，0.2.0 新包） | 0.2.0 主入口：keyed（key = bundle 包名），插件详情页内渲染配置面板（`view: 'page'`） |
+| `settings.plugin.item` | `@deepseek-ai/dsh-client-ui-settings-plugins` | 0.1.x 兼容入口：折叠卡片（list slot，需 `id`/`order`）；0.2.0 已从官方删除，保留注册仅为旧宿主 |
 
 ## 服务（inject）
 

@@ -1,6 +1,6 @@
 # DSH Host 能力清单（本插件用到的）
 
-本插件 host 侧消费的 DSH Host 服务与事件（2026-08 实测，基于 deepseek-harness checkout）。
+本插件 host 侧消费的 DSH Host 服务与事件（2026-11 修订，基于 dsh 0.2.2-rc.5）。
 
 ## 服务（inject）
 
@@ -10,7 +10,7 @@
 | `subprocess` | `@deepseek-ai/dsh-subprocess-local` | `spawn({argv, cwd, stdio, graceMs, signal, env})` 执行 git-bash；collect 模式输出截断 + spill |
 | `systemPrompt` | `@deepseek-ai/dsh-system-prompt` | `section({name, order, text})` 注册引导文本（`text` 每次 assembly 求值，返回空串即不注入）；**不再**用 `system-prompt/assemble` 裁工具面 |
 | `webServer` | `@deepseek-ai/dsh-host-webserver` | `register({kind:'prefix', path, handler})` 提供卡片读写 API |
-| `settings` | `@deepseek-ai/dsh-settings-file` | `installSettingsSection` 注册 `shell-policy` section；`mutate(ns, ops)` 持久化 preferred |
+| `settings` | `@deepseek-ai/dsh-settings-file` | `settings.mutate(entryId, ops)` 持久化 preferred / bashPath（namespace = profile entry id；0.1.x 的 `installSettingsSection` 已随 0.2.0 移除） |
 
 ## 事件
 
