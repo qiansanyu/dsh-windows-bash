@@ -216,17 +216,24 @@ interface BashResult {
   exitCode: number | null
   timedOut: boolean
   aborted: boolean
-  stdout: { text: string; truncated: boolean }
-  stderr: { text: string; truncated: boolean }
+  stdout: { text: string; truncated: boolean; spillPath?: string }
+  stderr: { text: string; truncated: boolean; spillPath?: string }
   sandbox?: { mode: string; denied: boolean }
+}
+
+/** 截断流的模型文本：溢出时在末尾追加整流 spill 文件路径（对齐官方 tool-bash streamText）。 */
+function streamText(output: { text: string; truncated: boolean; spillPath?: string }): string {
+  if (!output.truncated) return output.text
+  return `${output.text}\n[output truncated; full output: ${output.spillPath ?? '(unavailable)'}]`
 }
 
 /** 渲染 bash 工具结果文本（对齐官方 shell 工具：exit 标记在末尾，exit 0 不报）。 */
 function renderBashResult(value: BashResult, escalationModes: readonly SandboxMode[]): string {
-  let body = value.stdout.text
-  if (value.stderr.text.length > 0) {
+  let body = streamText(value.stdout)
+  const errText = streamText(value.stderr)
+  if (errText.length > 0) {
     if (body.length > 0 && !body.endsWith('\n')) body += '\n'
-    body += `[stderr]\n${value.stderr.text}`
+    body += `[stderr]\n${errText}`
   }
   if (body.length === 0) body = '(no output)'
   const markers: string[] = []
@@ -393,6 +400,7 @@ export function apply(ctx: AppContext, config: Config): void {
                       properties: {
                         text: { type: 'string', required: true },
                         truncated: { type: 'boolean', required: true },
+                        spillPath: { type: 'string' },
                       },
                     },
                     stderr: {
@@ -402,6 +410,7 @@ export function apply(ctx: AppContext, config: Config): void {
                       properties: {
                         text: { type: 'string', required: true },
                         truncated: { type: 'boolean', required: true },
+                        spillPath: { type: 'string' },
                       },
                     },
                     sandbox: {
@@ -558,8 +567,17 @@ export function apply(ctx: AppContext, config: Config): void {
                 exitCode: outcome.exitCode,
                 timedOut: controller.signal.aborted && exec.signal?.aborted !== true,
                 aborted: exec.signal?.aborted === true,
-                stdout: { text: out?.text ?? '', truncated: out?.lossy ?? false },
-                stderr: { text: stderrText, truncated: err?.lossy ?? false },
+                stdout: {
+                  text: out?.text ?? '',
+                  truncated: out?.lossy ?? false,
+                  // spillPath 仅在溢出发生且 spill 文件完好时由 reader 返回，条件展开与官方一致。
+                  ...out?.spillPath !== undefined ? { spillPath: out.spillPath } : {},
+                },
+                stderr: {
+                  text: stderrText,
+                  truncated: err?.lossy ?? false,
+                  ...err?.spillPath !== undefined ? { spillPath: err.spillPath } : {},
+                },
                 ...denied ? { sandbox: { mode: policy?.mode ?? 'read-only', denied: true } } : {},
               }
               if (result.aborted) {
@@ -750,7 +768,6 @@ export function apply(ctx: AppContext, config: Config): void {
   // 提交并发 loader/volatile-update 事件，不重建 entry、不重新 apply（见
   // cordis-plugin-loader entry.ts _commitVolatile），因此必须在此监听并重算
   // 探测与工具注册，否则卡片保存后 probe/effective 停留在 apply 时刻的旧值。
-  ctx.on('loader/volatile-update', () => { applyPolicy() })
   ctx.on('loader/volatile-update', () => { applyPolicy() })
 
   // 工具面同步的触发点。restrict 只能在 agent 作用域调用，所以按 agent 逐个同步：
