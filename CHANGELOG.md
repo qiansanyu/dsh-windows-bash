@@ -36,6 +36,10 @@
 - **提示词一致性**：`effective=pwsh`（含 bash 工具注册失败回落 pwsh）时不再注入"bash 是默认 shell"引导文本；section `text` 改为每次 assemble 求值的函数，由框架过滤空文本，与模型实际看到的工具面保持一致
 - **健壮性**：bash 子进程环境补充 `NO_COLOR=1` / `TERM=dumb` / `PAGER=cat` / `GIT_PAGER=cat`（对齐官方 `dsh-bash-local` 的 `ENV_OVERRIDES`），避免分页器把命令挂起到超时、以及 ANSI 转义序列污染工具输出
 
+### 变更
+
+- **dsh 依赖重解析到 `0.2.2-rc.5`**：`package-lock.json` 里 `@deepseek-ai/dsh-llm` / `dsh-sandbox` / `dsh-tools` 及 devDependencies 的 dsh 各包自 0.2.2-rc.1 时代冻结至今；manifest 范围 `>=0.2.2-rc.1 <0.3.0-0` 本就覆盖 rc.5，无需改 manifest，仅 `npm update` 重解析 lock。此前冻结的 rc.1 副本会在 `link:` 加载时被 Node 从插件自己的 node_modules 解析，与 rc.5 运行时混装。已在 dsh `0.2.2-rc.5` 宿主真机启动验证（`dsh web` 正常引导、插件激活、服务可响应）
+
 ## [0.0.7] - 2026-10-01
 
 ### 变更
