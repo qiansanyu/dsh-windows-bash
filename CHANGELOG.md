@@ -2,6 +2,33 @@
 
 本项目的所有重要变更记录于此。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [0.1.1] - 2026-11-21
+
+本版面向 dsh `0.2.2-rc.5` 宿主：补齐与官方 `tool-bash` 的对齐面（超时晋升、截断回传、结果标记、参数面），并依据本机 106 个 dsh session（7,517 条 bash 命令）的证据分析，把 Windows 专项防呆写进工具描述。
+
+### 修复
+
+- **后台作业输出恒为空（`job_output` 只回空、完成通知永远「No new output」）**：`jobs.start` 用的是旧版 `run().readOutput` 钩子，而当前 `@deepseek-ai/dsh-jobs` 只在 `spec.output` 非空时启动 pump，`readOutput` 已不被读取 ⇒ 后台进程的 stdout/stderr 从未进 ring。改为在 `spec` 里提供惰性绑定的 stdout/stderr `JobOutputSource`（spawn 发生在 `run()` 里，注册表首次 drain 早于它，源按 `running` 惰性取值）。顺带把非零退出的 `JobOutcome` 从 `failed` 改为 `completed` + `detail: exit code: N`：`failed` 在 jobs 契约里指作业基础设施失败，非零退出是命令的正常结果，与官方 `tool-bash` 同口径
+- **安全：状态/配置 API 增加请求准入**：`/dsh-shell-policy/api/*` 是裸 webServer 前缀路由，不在 `client-connection` 的 token/cookie 鉴权伞下；handler 入口新增 `isLocalGuiRequest`——带 `Origin` 头时（浏览器跨站 fetch 与表单 POST 均会带）要求回环主机，不带时（同源 GET/本地脚本）要求 `Host` 为回环。挡掉跨站页面经 simple request 静默改写 `preferred`/`bashPath`（`bashPath` 可被改写为任意可执行路径，是其中影响最大的一项）以及 Host 指向外部域名的 DNS rebinding 类请求
+- **提示词一致性**：`effective=pwsh`（含 bash 工具注册失败回落 pwsh）时不再注入"bash 是默认 shell"引导文本；section `text` 改为每次 assemble 求值的函数，由框架过滤空文本，与模型实际看到的工具面保持一致
+- **健壮性**：bash 子进程环境补充 `NO_COLOR=1` / `TERM=dumb` / `PAGER=cat` / `GIT_PAGER=cat`（对齐官方 `dsh-bash-local` 的 `ENV_OVERRIDES`），避免分页器把命令挂起到超时、以及 ANSI 转义序列污染工具输出
+- **confined 会话自动回落 pwsh**：MSYS 运行时启动需要命名信号管道，Windows ACL 沙箱（read-only/workspace-write）拒绝其创建（Win32 error 5），git-bash 在受限模式下起不来。改为可用性判定（`bashViableInMode`）+ execute 拦缺（可读错误而非 fatal）+ status API 报 `bashStartableInDefaultMode`；confined 会话隐藏 bash、回落官方 pwsh，保证模型手里始终是真能跑的 shell
+- **卡片保存实时生效**：`preferred`/`bashPath` 是 volatile 热配置，Loader 只做引用就地提交并发 `loader/volatile-update` 事件、不重建 entry——须监听该事件重算探测与工具注册，否则卡片保存后 `probe`/`effective` 停留在 apply 时刻的旧值
+- 顺修 `loader/volatile-update` 监听重复注册（幂等无害，属笔误）
+
+### 新增
+
+- **超时晋升后台（promote-on-timeout）**：前台命令超时不再被杀——先把命令注册成 job（`onExpiry:"none"`），`registry.wait(id, timeoutMs)` 到点仍在跑则晋升：模型立刻拿到已产出的部分输出 + `[still running after <N>ms; moved to background job <id>]`，此后 `job_output` 从晋升点续读（`registry.read` 推进消费游标，不重不漏；落后于 ring 时按官方口径补 dropped-output 通知）。`promoteOnTimeout` 可配置（默认开，设置面板可改且热切换触发重注册）；注册被拒 / 无 jobs 服务退回「前台 + 到期杀」。与官方 `dsh-tool-bash` `waitOnJob` 语义逐项对齐（取消时杀 job 等落地不另行通知、定时内落定摘除记录、两处 seam 差异有注释说明）
+- **截断输出回传 spill 全量路径**：stdout/stderr 各自在截断时追加 `[output truncated; full output: <path>]`（与官方 `streamText` 逐字符一致，路径缺失时 `(unavailable)` 占位），输出 schema 的 stdout/stderr 增加 `spillPath` 字段——模型直接读文件取全量，不再花一轮调用用 `sed`/`head` 重跑分段截取
+
+### 变更
+
+- **bash 工具 description 重写**：收录官方防呆四句（删除/移动前验证解析后的绝对路径、`${VAR:?}` 防未定义变量空展开、沙箱拒绝属策略不要换法重试、长输出落盘预告）+ Windows notes（MSYS 把 `/` 前缀参数改写成路径——用双斜杠 `//PID` 或前缀 `MSYS_NO_PATHCONV=1`；`/tmp` 仅 MSYS 内有效，原生程序传 workspace 路径；bash `kill` 杀不死 Windows 原生进程；中文系统下原生程序向管道输出 GBK，结果里的 U+FFFD/杂字是编码噪声而非损坏，读 ASCII/数字骨架）。Windows 两条官方没有也不会有（官方 bash 在 win32 被 disable）——依据 session 语料分析：GBK 噪声确凿命中 37/106 个 session，且模型的浪费集中在「不知道乱码是编码层现象」的反复自查；`PYTHONIOENCODING=utf-8 python` 等依赖项目环境的补救留在项目级文档，系统提示词只放平台事实
+- **超时可配置**：`timeoutMs` / `maxTimeoutMs` 进 Config（默认 120000 / 上限 600000，对齐官方 `dsh-bash-local` 口径），生效值 = `min(请求值 ?? timeoutMs, maxTimeoutMs)`，请求值仍可低于上限；此前模型可以要求任意长的超时定时器
+- **参数按能力动态注册**：`run_in_background` 仅在 jobs 服务存在时进 schema，`sandbox_permissions`/`justification` 仅在有沙箱升级面时进 schema，`timeoutMs` 描述双态（promote 可用时承诺「超时转后台而非被杀」）——缺失能力的组合里模型不再调到硬错误白费一轮重试（能力组合期固定，注册时算一次）
+- **结果标记对齐官方**：`[timed out]` → `[timed out after <N>ms]`（模型可判断「差一点跑完」还是「远不够」）；补 `[killed by signal: X]`（signal 分支优先、exit code 分支在后，与官方 `renderResult` 互斥顺序一致）；移除不可达的 `[aborted]` 分支（aborted 调用走 throw，不产出 result）
+- **dsh 依赖重解析到 `0.2.2-rc.5`**：`package-lock.json` 里 `@deepseek-ai/dsh-llm` / `dsh-sandbox` / `dsh-tools` 及 devDependencies 的 dsh 各包自 0.2.2-rc.1 时代冻结至今；manifest 范围 `>=0.2.2-rc.1 <0.3.0-0` 本就覆盖 rc.5，无需改 manifest，仅 `npm update` 重解析 lock。此前冻结的 rc.1 副本会在 `link:` 加载时被 Node 从插件自己的 node_modules 解析，与 rc.5 运行时混装。已在 dsh `0.2.2-rc.5` 宿主真机启动验证（`dsh web` 正常引导、插件激活、服务可响应）
+
 ## [0.1.0] - 2026-11-05
 
 本版是维护分支的首个版本（fork 自 [LAN-TINA-WS/dsh-windows-shell-policy](https://github.com/LAN-TINA-WS/dsh-windows-shell-policy) 0.0.7，原作者已停止跟进）。归属与改动范围见 [NOTICE](NOTICE)。
@@ -26,19 +53,6 @@
 ### 文档
 
 - README（中/英）、`docs/capabilities-host.md`、`docs/conventions.md`、`docs/roadmap-composition.md` 同步新机制与新的依赖口径；新增 [NOTICE](NOTICE) 记录 fork 出处与改动范围
-
-## [Unreleased]
-
-### 修复
-
-- **后台作业输出恒为空（`job_output` 只回空、完成通知永远「No new output」）**：`jobs.start` 用的是旧版 `run().readOutput` 钩子，而当前 `@deepseek-ai/dsh-jobs` 只在 `spec.output` 非空时启动 pump，`readOutput` 已不被读取 ⇒ 后台进程的 stdout/stderr 从未进 ring。改为在 `spec` 里提供惰性绑定的 stdout/stderr `JobOutputSource`（spawn 发生在 `run()` 里，注册表首次 drain 早于它，源按 `running` 惰性取值）。顺带把非零退出的 `JobOutcome` 从 `failed` 改为 `completed` + `detail: exit code: N`：`failed` 在 jobs 契约里指作业基础设施失败，非零退出是命令的正常结果，与官方 `tool-bash` 同口径
-- **安全：状态/配置 API 增加请求准入**：`/dsh-shell-policy/api/*` 是裸 webServer 前缀路由，不在 `client-connection` 的 token/cookie 鉴权伞下；handler 入口新增 `isLocalGuiRequest`——带 `Origin` 头时（浏览器跨站 fetch 与表单 POST 均会带）要求回环主机，不带时（同源 GET/本地脚本）要求 `Host` 为回环。挡掉跨站页面经 simple request 静默改写 `preferred`/`bashPath`（`bashPath` 可被改写为任意可执行路径，是其中影响最大的一项）以及 Host 指向外部域名的 DNS rebinding 类请求
-- **提示词一致性**：`effective=pwsh`（含 bash 工具注册失败回落 pwsh）时不再注入"bash 是默认 shell"引导文本；section `text` 改为每次 assemble 求值的函数，由框架过滤空文本，与模型实际看到的工具面保持一致
-- **健壮性**：bash 子进程环境补充 `NO_COLOR=1` / `TERM=dumb` / `PAGER=cat` / `GIT_PAGER=cat`（对齐官方 `dsh-bash-local` 的 `ENV_OVERRIDES`），避免分页器把命令挂起到超时、以及 ANSI 转义序列污染工具输出
-
-### 变更
-
-- **dsh 依赖重解析到 `0.2.2-rc.5`**：`package-lock.json` 里 `@deepseek-ai/dsh-llm` / `dsh-sandbox` / `dsh-tools` 及 devDependencies 的 dsh 各包自 0.2.2-rc.1 时代冻结至今；manifest 范围 `>=0.2.2-rc.1 <0.3.0-0` 本就覆盖 rc.5，无需改 manifest，仅 `npm update` 重解析 lock。此前冻结的 rc.1 副本会在 `link:` 加载时被 Node 从插件自己的 node_modules 解析，与 rc.5 运行时混装。已在 dsh `0.2.2-rc.5` 宿主真机启动验证（`dsh web` 正常引导、插件激活、服务可响应）
 
 ## [0.0.7] - 2026-10-01
 
