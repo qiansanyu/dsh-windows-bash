@@ -14,7 +14,7 @@
 
 DeepSeek Harness 的 **Windows 默认 Shell 策略插件**：DSH 在 Windows 上默认启用 PowerShell（pwsh），而 LLM 训练语料中 bash 占比远高于 PowerShell，agent 执行 POSIX 命令时错误率显著升高。本插件探测 git-bash/MSYS2/Cygwin，在「设置 → 插件 → 插件配置」提供「默认 Shell」折叠卡片一键切换 bash/pwsh，动态注册 bash 工具，并按 agent 用 `tools.restrict` 收敛工具面，让 agent 只面对一个**真能跑的** shell。
 
-> **来源**：本仓库现为独立维护的仓库，源自 [LAN-TINA-WS/dsh-windows-shell-policy](https://github.com/LAN-TINA-WS/dsh-windows-shell-policy)——原作者停止跟进后由 [qiansanyu](https://github.com/qiansanyu) 接手维护，0.1.0 起适配 dsh 0.2.2。原项目 MIT，版权与出处见 [NOTICE](NOTICE)。
+> **来源**：本仓库现为独立维护的仓库，源自 [LAN-TINA-WS/dsh-windows-shell-policy](https://github.com/LAN-TINA-WS/dsh-windows-shell-policy)，0.1.0 起适配 dsh 0.2.2。原项目 MIT，版权与出处见 [NOTICE](NOTICE)。
 >
 > [最新 Release](https://github.com/qiansanyu/dsh-windows-bash/releases/latest) · [dsh-plugin 生态](https://github.com/topics/dsh-plugin) · [反馈](https://github.com/qiansanyu/dsh-windows-bash/issues)
 

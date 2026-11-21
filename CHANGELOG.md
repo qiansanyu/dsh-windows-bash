@@ -41,7 +41,7 @@
 
 ## [0.1.0] - 2026-11-05
 
-本版是维护分支的首个版本（fork 自 [LAN-TINA-WS/dsh-windows-shell-policy](https://github.com/LAN-TINA-WS/dsh-windows-shell-policy) 0.0.7，原作者已停止跟进）。归属与改动范围见 [NOTICE](NOTICE)。
+本版是维护分支的首个版本（fork 自 [LAN-TINA-WS/dsh-windows-shell-policy](https://github.com/LAN-TINA-WS/dsh-windows-shell-policy) 0.0.7）。归属与改动范围见 [NOTICE](NOTICE)。
 
 ### 修复（阻塞级）
 

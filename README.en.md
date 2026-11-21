@@ -14,7 +14,7 @@
 
 A **Windows default shell policy plugin** for DeepSeek Harness. DSH enables PowerShell (pwsh) by default on Windows, but bash dominates LLM training corpora, so agents make significantly more errors running POSIX commands through pwsh. This plugin probes for git-bash/MSYS2/Cygwin, adds a collapsible "Default Shell" card under Settings → Plugins → Plugin config to switch between bash and pwsh, dynamically registers the bash tool, and narrows the tool surface per agent with `tools.restrict` so the agent faces exactly one shell tool — the one that actually runs.
 
-> **Provenance**: this repository is now maintained independently, based on [LAN-TINA-WS/dsh-windows-shell-policy](https://github.com/LAN-TINA-WS/dsh-windows-shell-policy) — taken over by [qiansanyu](https://github.com/qiansanyu) after upstream stopped following DSH; 0.1.0 adapts it to dsh 0.2.2. The original project is MIT; copyright and provenance live in [NOTICE](NOTICE).
+> **Provenance**: this repository is now maintained independently, based on [LAN-TINA-WS/dsh-windows-shell-policy](https://github.com/LAN-TINA-WS/dsh-windows-shell-policy); 0.1.0 adapts it to dsh 0.2.2. The original project is MIT; copyright and provenance live in [NOTICE](NOTICE).
 >
 > [Latest Release](https://github.com/qiansanyu/dsh-windows-bash/releases/latest) · [dsh-plugin ecosystem](https://github.com/topics/dsh-plugin) · [Feedback](https://github.com/qiansanyu/dsh-windows-bash/issues)
 
