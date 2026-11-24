@@ -2,6 +2,17 @@
 
 本项目的所有重要变更记录于此。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [未发布]
+
+### 修复
+
+- **被杀的后台作业报 `completed`**：`job_kill`、调用方 abort、teardown 终止的 bash 作业，`JobOutcome` 此前恒为 `completed + exit code: N`——模型 kill 后台作业后读 `job_output` 会以为命令正常结束（官方 `tool-bash` 对被杀进程报 `killed`）。现在取消路径按 `killed` 结算，detail 带 `signal: X` 或 `killed before exit`，注册表再追加 kill reason；映射抽到 `src/outcome.ts`，`test/outcome.test.mjs` 钉住语义
+- **取消时的 AbortError 缺终止结果**：`tool call aborted` 现在附带 `command exited (exit code N)` / `command was killed by signal X` / `command was not started`。嵌套在 `run_code` 内时这条 message 落进 `tool/ptc-dispatch` 的 error content，事后能判断命令到底停没停
+
+### 变更
+
+- **description 说清嵌套边界**：`timeoutMs` 只约束本次调用；在 `run_code` 等宿主程序内运行时，宿主 deadline 可能先到并取消命令（不会晋升成后台），长任务用 `run_in_background: true`；`run_in_background` 文案补「调用返回后作业继续跑，包括跨过宿主 deadline」
+
 ## [0.1.2] - 2026-11-21
 
 本版是独立仓库的首个版本：脱离 fork 网络，以新名 `dsh-windows-bash` 发布（GitHub 仓库与 npm 包同名）。出处与归属见 [NOTICE](NOTICE)。

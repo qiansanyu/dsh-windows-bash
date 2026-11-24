@@ -35,6 +35,7 @@ import type { JobChunk, JobId, JobOutcome, JobOutputSource, JobRegistry, JobView
 import type {} from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { bashViableInMode, desiredHide, type HideTarget } from './policy.js'
+import { bashJobOutcome, stoppedDetail } from './outcome.js'
 import { existsSync } from 'node:fs'
 import { isAbsolute, join, resolve } from 'node:path'
 
@@ -326,6 +327,17 @@ function parseExitStatus(text: string): { body: string; exitCode?: number; signa
   return { body: text, exitCode: 0 }
 }
 
+/**
+ * 调用方取消时的 AbortError：保留官方 `tool call aborted` 前缀，再带上命令的
+ * 实际终止结果（信号名或 exit code）。嵌套在 `run_code` 里时，这条 message 会
+ * 落进 `tool/ptc-dispatch` 的 error content，用于事后判断命令是否真的停了。
+ */
+function abortedError(detail?: string): HarnessError {
+  const error = new HarnessError(detail === undefined ? 'tool call aborted' : `tool call aborted; ${detail}`, TOOL_ABORTED)
+  error.name = 'AbortError'
+  return error
+}
+
 /** bash 工具参数。 */
 interface BashToolArgs {
   command: string
@@ -471,6 +483,8 @@ export function apply(ctx: AppContext, config: Config): void {
         spawnSpec: (signal: AbortSignal | undefined) => SubprocessSpawnSpec,
       ): { id: JobId; process: () => BashProcess | undefined } => {
         let running: BashProcess | undefined
+        /** 是否由取消路径（job_kill / 调用方 abort / teardown）终止；决定终态 killed 还是 completed。 */
+        let stopped = false
         const outputSource = (channel: 'stdout' | 'stderr'): JobOutputSource => ({
           channel,
           read: (fromByte) => {
@@ -490,12 +504,13 @@ export function apply(ctx: AppContext, config: Config): void {
             running = ctx.subprocess.spawn(spawnSpec(undefined))
             const handle = running
             return {
-              cancel: () => handle.terminate(),
-              // 非零退出是命令的结果，不是作业基础设施失败（与官方 tool-bash 同口径）。
-              done: handle.done.then((outcome): JobOutcome => ({
-                status: 'completed',
-                detail: `exit code: ${outcome.exitCode}`,
-              })),
+              cancel: () => {
+                stopped = true
+                handle.terminate()
+              },
+              // 非零退出是命令的结果，不是作业基础设施失败（与官方 tool-bash 同口径）；
+              // 被取消的进程按 killed 结算，注册表会把 kill reason 并进 detail。
+              done: handle.done.then((outcome): JobOutcome => bashJobOutcome(outcome, stopped)),
             }
           },
         })
@@ -533,11 +548,12 @@ export function apply(ctx: AppContext, config: Config): void {
           view = await registry.wait(attached.id, timeoutMs, owner, exec.signal)
         } catch {
           // 对自己名下的活 job，wait 只会因调用方取消而拒绝：这次调用结束了，命令随之
-          // 终止——与前台到期杀同口径。
+          // 终止——与前台到期杀同口径。终止结果并进 AbortError，别只留一句
+          // "tool call aborted" 让人猜命令停没停。
           await stop('tool call aborted')
-          const error = new HarnessError('tool call aborted', TOOL_ABORTED)
-          error.name = 'AbortError'
-          throw error
+          const handle = attached.process()
+          const outcome = handle === undefined ? undefined : await handle.done.catch(() => undefined)
+          throw abortedError(stoppedDetail(outcome))
         }
         if (view.status === 'running' || view.status === 'stopping') {
           // 等待到点仍在跑：晋升为后台 job。registry.read 推进模型消费游标，是
@@ -568,9 +584,7 @@ export function apply(ctx: AppContext, config: Config): void {
           sandboxMode,
         )
         if (result.aborted) {
-          const error = new HarnessError('tool call aborted', TOOL_ABORTED)
-          error.name = 'AbortError'
-          throw error
+          throw abortedError(stoppedDetail(result))
         }
         return result
       }
@@ -583,7 +597,8 @@ export function apply(ctx: AppContext, config: Config): void {
             + 'pass `workdir` instead of using `cd`. Non-zero exits are reported as `[exit code: N]`. '
             + 'Long output is truncated to its tail; the full output is saved to a file whose path is reported when available. '
             + 'Set `run_in_background: true` for long-running commands: the call returns a job id immediately; '
-            + 'read its output with `job_output` and stop it with `job_kill`.\n'
+            + 'read its output with `job_output` and stop it with `job_kill`; the job keeps running after this call returns.\n'
+            + '`timeoutMs` bounds only this call: when the call runs inside a program (e.g. `run_code`), the program deadline can fire first and cancel the command instead of promoting it — use `run_in_background: true` for work that must outlive the call.\n'
             + 'Before any delete or move, verify the resolved absolute target path; never run it against a computed path you have not checked. '
             + 'An unset variable expands to an empty string — guard such paths with `${VAR:?}`. '
             + 'A sandbox denial is reported as `[sandbox: file access denied under <mode> mode]`; it is policy — do not retry another way.\n'
@@ -604,13 +619,13 @@ export function apply(ctx: AppContext, config: Config): void {
             timeoutMs: {
               type: 'number',
               description: promoteAvailable
-                ? 'Timeout in milliseconds. Defaults to 120000, capped at 600000 (both configurable); on expiry the command moves to the background as a job instead of being killed.'
-                : 'Timeout in milliseconds. Defaults to 120000, capped at 600000 (both configurable); the command is killed on expiry.',
+                ? 'Timeout in milliseconds. Defaults to 120000, capped at 600000 (both configurable); an explicit value above the cap is silently clamped. On expiry (while the call is still alive) the command moves to the background as a job instead of being killed; an enclosing program deadline cancels it first.'
+                : 'Timeout in milliseconds. Defaults to 120000, capped at 600000 (both configurable); an explicit value above the cap is silently clamped, and the command is killed on expiry.',
             },
             workdir: { type: 'string', description: 'Working directory for this command. Defaults to the session workspace; a relative path is resolved against it.' },
             // run_in_background 仅在 jobs 服务存在时注册（能力在组合期固定）。
             ...(jobsAvailable
-              ? { run_in_background: { type: 'boolean' as const, description: 'Run in the background and return a job id immediately (collect with job_output, stop with job_kill). No timeout applies.' } }
+              ? { run_in_background: { type: 'boolean' as const, description: 'Run in the background and return a job id immediately (collect with job_output, stop with job_kill). No timeout applies, and the job keeps running after this call returns, including past an enclosing program deadline.' } }
               : {}),
             // 沙箱升级面存在时才注册升级参数。
             ...(escalationModes.length > 0
@@ -780,9 +795,7 @@ export function apply(ctx: AppContext, config: Config): void {
                 throw new Error('background jobs unavailable: load @deepseek-ai/dsh-jobs and @deepseek-ai/dsh-tool-jobs')
               }
               if (exec.signal.aborted) {
-                const error = new HarnessError('tool call aborted', TOOL_ABORTED)
-                error.name = 'AbortError'
-                throw error
+                throw abortedError('command was not started')
               }
               return { kind: 'background' as const, jobId: startBashJob(jobs, args.command, exec, spawnSpec).id }
             }
@@ -823,9 +836,7 @@ export function apply(ctx: AppContext, config: Config): void {
                 timeoutMs,
               }, confined, policy?.mode)
               if (result.aborted) {
-                const error = new HarnessError('tool call aborted', TOOL_ABORTED)
-                error.name = 'AbortError'
-                throw error
+                throw abortedError(stoppedDetail(result))
               }
               return result
             } finally {
