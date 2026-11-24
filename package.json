@@ -1,6 +1,6 @@
 {
   "name": "dsh-windows-bash",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "DSH Windows default shell policy plugin: probe git-bash/MSYS2, switch bash/pwsh from the plugin config card, register the bash tool, and hide the other shell per agent with tools.restrict. DSH Windows 默认 Shell 策略插件：探测 git-bash，配置面板切换 bash/pwsh，动态注册 bash 工具，并按 agent 用 tools.restrict 隐藏另一个 shell",
   "type": "module",
   "main": "./lib/index.js",

@@ -2,7 +2,9 @@
 
 本项目的所有重要变更记录于此。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [SemVer](https://semver.org/lang/zh-CN/)。
 
-## [未发布]
+## [0.1.3] - 2026-11-24
+
+本版修正后台作业的取消语义：模型 kill 掉后台命令后读到的是 `killed`，而不是伪装成正常结束的 `completed`；abort 路径同时带上命令的终止结果，事后能判断命令到底停没停。
 
 ### 修复
 
@@ -12,6 +14,7 @@
 ### 变更
 
 - **description 说清嵌套边界**：`timeoutMs` 只约束本次调用；在 `run_code` 等宿主程序内运行时，宿主 deadline 可能先到并取消命令（不会晋升成后台），长任务用 `run_in_background: true`；`run_in_background` 文案补「调用返回后作业继续跑，包括跨过宿主 deadline」
+- **文档截图更新**：`docs/screenshots` 的配置卡片与终端卡片对齐当前 UI
 
 ## [0.1.2] - 2026-11-21
 
